@@ -43,11 +43,11 @@ client.on("guildCreate", (guild) => {
     name : guild.name,
     schedulingChannelID : -1,
     timeZone : "",
-    managerRoleID : -1,
+    schedulerRoleID : -1,
     team : {}
   }
   db.collection('servers').doc(guild.id).set(guildData)
-  }
+}
 );
 
 client.on("guildDelete", (guild) => {
@@ -79,22 +79,51 @@ client.on('message', msg => {
       // If it does not match the valid input, reject.
       if(!msg.content.match(validInput)){
           msg.reply("The input was invalid. The correct format is !registerTeam \"<team>\" <opgg link> \n**ex. !registerTeam \"Team Chris\" https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
-      }else{
-        var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
-        var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
-        console.log(OPGG)
-        db.collection('servers').doc(msg.guild.id).withConverter(teamConverter).update({team : {
+          return
+      }
+      var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
+      var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
+      attemptToSetRoles(msg);
+      db.collection('servers').doc(msg.guild.id).update({
+        team : {
           discordChannelID : msg.guild.id, 
           manager: msg.author.tag, 
           name: teamName, 
           OPGG: OPGG, 
           schedule : [],
-        }})
-      }
+        },
+        schedulingChannelID : msg.channel.id,
+      })
+      console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
+      msg.channel.send("``` " + teamName + " successfully attatched to " + msg.guild.name + " within the database.```")
       break;
+      }
     }
-  });
+  );
 
+
+
+
+
+
+function attemptToSetRoles(msg){
+  var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
+  var playerRole = msg.guild.roles.cache.find(role => role.name === "Player")
+  if (schedulerRole == null){
+    msg.reply("I tried to setup the Scheduler role as your primary scheduling role but I couldn't find it. \n Please create a role named Scheduler for me to use.")
+  }else{
+    db.collection('servers').doc(msg.guild.id).update({
+      schedulerRoleID : schedulerRole.id
+    })
+  }
+  if (playerRole == null){
+    msg.reply("I tried to setup the Player role as your primary player role but I couldn't find it. \n Please create a role named Player for me to use.")
+  }else{
+    db.collection('servers').doc(msg.guild.id).update({
+      playerRoleID : playerRole.id
+    })
+  }
+}
 // Checks if anything is uninitialized within the database. Returns -1 if so, and 0 if everything is all good.
 function checkForDefaultFields(msg){
   var somethingWrong = 0;
@@ -111,7 +140,7 @@ function checkForDefaultFields(msg){
       str += "\n- Team object. This should never happen."
       somethingWrong++
     }
-    if (data.managerRoleID == -1){
+    if (data.schedulerRoleID == -1){
       str += "\n- Manager role. "
       somethingWrong++
     }
