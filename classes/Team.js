@@ -1,13 +1,12 @@
-const ScrimSchedule = require('./ScrimSchedule')
 
 class Team{
-    constructor(discordChannel, manager, name, OPGG){
-        this.discordChannel = discordChannel
+    constructor(discordChannel, manager, name, OPGG, scirmSchedule){
+        this.discordChannelID = discordChannel
         this.manager = manager
         this.name = name
         this.OPGG = OPGG
-        this.scrimSchedule = new ScrimSchedule()
+        this.scrimSchedule = scirmSchedule
     }
 }
 
-module.export = Team
+module.exports = Team
