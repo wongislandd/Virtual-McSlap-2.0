@@ -20,10 +20,12 @@ const PREFIX = "!"
 
 // For usage in moment.js
 const moment = require('moment-timezone')
-const Eastern = "America/New_York"
-const Pacific = "America/Los_Angeles"
-const Mountain = "America/Boise"
-const Central = "America/Thunder_Bay"
+const TIMEZONES = {
+  EASTERN : "America/New_York",
+  PACIFIC : "America/Los_Angeles",
+  MOUNTAIN : "America/Boise",
+  CENTRAL : "America/Thunder_Bay",
+}
 const YEAR = new Date().getFullYear()
 const MONTHS = {
   January : "01",
@@ -179,7 +181,7 @@ client.on('message', msg => {
         msg.reply("The input was invalid. The correct format is !setTimeZone <Eastern/Pacific/Mountain/Central> \n**ex. !setTimeZone Eastern**");
         return
       }
-      timeZone = args[1]
+      timeZone = args[1].toUpperCase()
       DiscordChannel.changeTimezone(msg.guild.id, timeZone, db)
       msg.channel.send("```" + msg.guild.name + " time zone has been set to " + timeZone + " within the database.```")
       break;
@@ -194,6 +196,9 @@ client.on('message', msg => {
       var time = args[3];
       var AMPM = args[4];
 
+      if (day.length == 1){
+        day = "0" + day
+      }
       // If PM was specified, add 12 to the total time.
       if(AMPM == "PM"){
         var timeSplit = time.split(":")
@@ -206,17 +211,17 @@ client.on('message', msg => {
         let data = doc.data()
         var timeZone = data.timeZone;
         switch(timeZone){
-          case 'Eastern':
-            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Eastern)
+          case 'EASTERN':
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, TIMEZONES["EASTERN"])           
             break;
-          case 'Pacific':
-            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Pacific)
+          case 'PACIFIC':
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, TIMEZONES["PACIFIC"])
             break;
-          case 'Mountain':
-            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Mountain)
+          case 'MOUNTAIN':
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, TIMEZONES["MOUNTAIN"])
             break;
           default:
-            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Central)
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, TIMEZONES["CENTRAL"])
             break;
         }
         if (!requestedTime.isValid()){
@@ -235,7 +240,7 @@ client.on('message', msg => {
         db.collection('servers').doc(msg.guild.id).update({
            team : data.team
         })
-        var formattedListing = Scrim.formatIntoPendingString(requestedTime, data.team.name, data.team.manager, data.team.OPGG)
+        var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.manager, data.team.OPGG)
 
         msg.channel.send("__Posting this listing in the collegiate scheduling channel.__ \n" +
         formattedListing)
@@ -246,15 +251,13 @@ client.on('message', msg => {
       }
       ).catch(err => {
         console.log("Error getting document", err);
-        somethingWrong = 1;
       })
       break;
       case 'schedule':
         db.collection('servers').doc(msg.guild.id).get()
         .then(doc=> {
           let data = doc.data();
-          var schedule = data.team.schedule.sort;
-          Team.printSchedule(schedule, msg, schedulingChannelID)
+          Team.printSchedule(data, msg, data.schedulingChannelID)
         }
         )
         break;
