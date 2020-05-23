@@ -10,9 +10,15 @@ class DiscordChannel{
         this.team = team
     }
     // TODO
-    changeChannel(newChannelID){}
-    changeTimezone(newTimeZone){}
-    changeManagerRoleID(newRoleID){}
+    static changeChannel(serverid, newChannelID, db){
+
+    }
+    static changeTimezone(serverid, newTimeZone, db){
+        db.collection('servers').doc(serverid).update({
+            timeZone : newTimeZone
+        })
+    }
+    static changeManagerRoleID(serverid, newRoleID, db){}
 }
 
-module.export = DiscordChannel
+module.exports = DiscordChannel

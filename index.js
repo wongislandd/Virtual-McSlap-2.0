@@ -8,14 +8,41 @@ admin.initializeApp({
 const db = admin.firestore()
 // Run by "node index.js"
 
+// Require custom classes
+const Team = require('./classes/Team')
+const DiscordChannel = require('./classes/DiscordChannel')
+const Scrim = require('./classes/Scrim')
 
 // Require Discord
 const Discord = require('discord.js');
 const client = new Discord.Client();
 const PREFIX = "!"
 
+// For usage in moment.js
+const moment = require('moment-timezone')
+const Eastern = "America/New_York"
+const Pacific = "America/Los_Angeles"
+const Mountain = "America/Boise"
+const Central = "America/Thunder_Bay"
+const YEAR = new Date().getFullYear()
+const MONTHS = {
+  January : "01",
+  February : "02",
+  March : "03",
+  April : "04",
+  May : "05",
+  June : "06",
+  July : "07",
+  August : "08",
+  September : "09",
+  October : "10",
+  November : "11",
+  December : "12",
+}
 
-const Team = require('./classes/Team')
+// COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
+const collegiateServerID = "713578165511127132"
+const collegiateSchedulingChannelID = "713866406705233952"
 
 
 client.on("guildCreate", (guild) => {
@@ -61,6 +88,28 @@ client.on('ready', () => {
 
 
 
+function botDescription(){
+  var basicCommands = {
+    // Basic commands
+    "!info" : "Returns a list of supported commands.",
+  }
+  var configCommands = {
+    // Config commands
+    "!registerTeam" : "Registers your teams discord within the bot's database. This is required. The correct format is !registerTeam \"<team>\" <opgg link>",
+    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <EST/EDT/PST/PDT/MST/MDT/CST/CDT>"
+}
+  strToReturn = "__**Basic commands**__ \n";
+  Object.entries(basicCommands).forEach(([key, value]) => {
+      strToReturn += "**"+key+"**" + " - " + value + "\n";
+   });
+  strToReturn += "\n__**Setting commands (requires the Scheduler role)**__ \n";
+  Object.entries(configCommands).forEach(([key, value]) => {
+      strToReturn += "**"+key+"**" + " - " + value + "\n";
+  });
+  return strToReturn;
+}
+
+
 
 client.on('message', msg => {
   if (!msg.content.startsWith(PREFIX)){
@@ -68,40 +117,152 @@ client.on('message', msg => {
   }
   let args = msg.content.substring(PREFIX.length).split(" ");
   switch(args[0]){
+    case 'info':
+        msg.channel.send(botDescription())
+        break;
+    case 'serverSettings':
+        if(checkForDefaultFields(msg) == -1){
+          console.log("An uninitialized user attempted to use a command!");
+          return;
+        }
+        db.collection('servers').doc(msg.guild.id).get()
+        .then(doc => { 
+            var str = "__Here are the details I have on record for your server: __"
+            let data = doc.data()
+            str += `\n**Server Name:** ${data.name}`
+            str += `\n**Preferred Time Zone:** ${data.timeZone}`
+            str += `\n**Player Role:** ${msg.guild.roles.cache.get(data.playerRoleID)}`
+            str += `\n**Scheduler Role:** ${msg.guild.roles.cache.get(data.schedulerRoleID)}`
+            str += `\n**Scheduling Channel:** ${msg.guild.channels.cache.get(data.schedulingChannelID)}`
+            str += `\n**Team Name:** ${data.team.name}`
+            str += `\n**Team Manager:** ${data.team.manager}`
+            str += `\n**OPGG:** ${data.team.OPGG}`
+            str += ""
+            msg.channel.send(str);
+        }).catch(err => {
+          console.log("Error getting document", err);
+          somethingWrong = 1;
+        })
+        break;
     case 'test' :
-      if(checkForDefaultFields(msg) == -1){
-        console.log("An uninitialized user attempted to use a command!");
-        return;
-      }
-      break;
+        if(checkForDefaultFields(msg) == -1){
+          console.log("An uninitialized user attempted to use a command!");
+          return;
+        }
+        break;
     case 'registerTeam':
-      const validInput = /registerTeam[\s]+"[\S\s]+"[\s]+(https:\/\/na.op.gg\/[\S]+)/
-      // If it does not match the valid input, reject.
+        var validInput = /registerTeam[\s]+"[\S\s]+"[\s]+(https:\/\/na.op.gg\/[\S]+)/
+        // If it does not match the valid input, reject.
+        if(!msg.content.match(validInput)){
+            msg.reply("The input was invalid. The correct format is !registerTeam \"<team>\" <opgg link> \n**ex. !registerTeam \"Team Chris\" https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
+            return
+        }
+        var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
+        var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
+        attemptToSetRoles(msg);
+        db.collection('servers').doc(msg.guild.id).update({
+          team : {
+            discordChannelID : msg.guild.id, 
+            manager: msg.author.tag, 
+            name: teamName, 
+            OPGG: OPGG, 
+            schedule : [],
+          },
+          schedulingChannelID : msg.channel.id,
+        })
+        console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
+        msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```")
+        break;
+    case 'setTimeZone':
+      var validInput = /setTimeZone[\s]+(Eastern|Pacific|Mountain|Central)/
       if(!msg.content.match(validInput)){
-          msg.reply("The input was invalid. The correct format is !registerTeam \"<team>\" <opgg link> \n**ex. !registerTeam \"Team Chris\" https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
-          return
+        msg.reply("The input was invalid. The correct format is !setTimeZone <Eastern/Pacific/Mountain/Central> \n**ex. !setTimeZone Eastern**");
+        return
       }
-      var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
-      var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
-      attemptToSetRoles(msg);
-      db.collection('servers').doc(msg.guild.id).update({
-        team : {
-          discordChannelID : msg.guild.id, 
-          manager: msg.author.tag, 
-          name: teamName, 
-          OPGG: OPGG, 
-          schedule : [],
-        },
-        schedulingChannelID : msg.channel.id,
-      })
-      console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
-      msg.channel.send("``` " + teamName + " successfully attatched to " + msg.guild.name + " within the database.```")
+      timeZone = args[1]
+      DiscordChannel.changeTimezone(msg.guild.id, timeZone, db)
+      msg.channel.send("```" + msg.guild.name + " time zone has been set to " + timeZone + " within the database.```")
       break;
+    case 'post':
+      var validInput = /post[\s]+(January|February|March|April|May|June|July|August|September|October|November|December)\s+[\d]{1,2}\s+[\d]{1,2}[:][\d]{2}[\s]+(AM|PM|am|pm)/
+      if(!msg.content.match(validInput)){
+        msg.reply("The input was invalid. The correct format is !post <Month> <Day> <Time> <AM/PM>\n**ex. !post May 20 5:00 PM**");
+        return
       }
+      var month = args[1];
+      var day = args[2];
+      var time = args[3];
+      var AMPM = args[4];
+
+      // If PM was specified, add 12 to the total time.
+      if(AMPM == "PM"){
+        var timeSplit = time.split(":")
+        var hour = timeSplit[0]
+        hour = parseInt(hour)+12
+        time = hour + ":" + timeSplit[1]
+      }
+      db.collection('servers').doc(msg.guild.id).get()
+      .then(doc=> {
+        let data = doc.data()
+        var timeZone = data.timeZone;
+        switch(timeZone){
+          case 'Eastern':
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Eastern)
+            break;
+          case 'Pacific':
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Pacific)
+            break;
+          case 'Mountain':
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Mountain)
+            break;
+          default:
+            var requestedTime = moment.tz(`${YEAR}-${MONTHS[month]}-${day} ${time}`, Central)
+            break;
+        }
+        if (!requestedTime.isValid()){
+          msg.reply("You gave me an invalid time. >:(")
+          return;
+        }
+        // This is the value I want to store within Firestore
+        var timeValue = requestedTime.valueOf();
+        // Push a new scrim into the local array, then update in the database.
+        data.team.schedule.push({
+          time : timeValue,
+          homeTeam : data.team.name,
+          awayTeam : "",
+          pending : true,
+        })
+        db.collection('servers').doc(msg.guild.id).update({
+           team : data.team
+        })
+        var formattedListing = Scrim.formatIntoPendingString(requestedTime, data.team.name, data.team.manager, data.team.OPGG)
+
+        msg.channel.send("__Posting this listing in the collegiate scheduling channel.__ \n" +
+        formattedListing)
+        client.guilds.cache.get(collegiateServerID)
+        .channels.cache.get(collegiateSchedulingChannelID).send(
+          "__New Scrim Listing__ \n" +
+          formattedListing)
+      }
+      ).catch(err => {
+        console.log("Error getting document", err);
+        somethingWrong = 1;
+      })
+      break;
+      case 'schedule':
+        db.collection('servers').doc(msg.guild.id).get()
+        .then(doc=> {
+          let data = doc.data();
+          var schedule = data.team.schedule.sort;
+          Team.printSchedule(schedule, msg, schedulingChannelID)
+        }
+        )
+        break;
     }
-  );
+  });
 
 
+  
 
 
 
@@ -156,12 +317,9 @@ function checkForDefaultFields(msg){
     somethingWrong = 1;
     process.exit();
   })
-  if(somethingWrong != 0){
-    return -1;
-  }else{
-    return 0;
-  }
 }
+
+// Gets the current details of the server
 
 client.login("NzEzNTc3ODEzMTU5OTY4ODAw.XsiJLg.FIR6eETw2bMcOcvGm0stomqxeLE");
 
