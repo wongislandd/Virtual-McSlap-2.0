@@ -42,6 +42,9 @@ const MONTHS = {
   December : "12",
 }
 
+
+
+
 // COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
 const collegiateServerID = "713578165511127132"
 const collegiateSchedulingChannelID = "713866406705233952"
@@ -113,7 +116,7 @@ function botDescription(){
 
 
 
-client.on('message', msg => {
+client.on('message', async msg => {
   if (!msg.content.startsWith(PREFIX)){
     return;
   }
@@ -196,6 +199,8 @@ client.on('message', msg => {
       var time = args[3];
       var AMPM = args[4];
 
+
+      
       if (day.length == 1){
         day = "0" + day
       }
@@ -231,28 +236,21 @@ client.on('message', msg => {
         // This is the value I want to store within Firestore
         var timeValue = requestedTime.valueOf();
         // Push a new scrim into the local array, then update in the database.
-        data.team.schedule.push({
-          time : timeValue,
-          homeTeam : data.team.name,
-          awayTeam : "",
-          pending : true,
-        })
-        db.collection('servers').doc(msg.guild.id).update({
-           team : data.team
-        })
-        var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.manager, data.team.OPGG)
 
-        msg.channel.send("__Posting this listing in the collegiate scheduling channel.__ \n" +
-        formattedListing)
-        client.guilds.cache.get(collegiateServerID)
-        .channels.cache.get(collegiateSchedulingChannelID).send(
-          "__New Scrim Listing__ \n" +
-          formattedListing)
-      }
-      ).catch(err => {
-        console.log("Error getting document", err);
+        var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.manager, data.team.OPGG)
+        getConfirmation(msg,  formattedListing, data, timeValue);
       })
-      break;
+        break
+      //   msg.channel.send("__Posting this listing in the collegiate scheduling channel.__ \n" +
+      //   formattedListing)
+      //   client.guilds.cache.get(collegiateServerID)
+      //   .channels.cache.get(collegiateSchedulingChannelID).send(
+      //     "__New Scrim Listing__ \n" +
+      //     formattedListing)
+      // }
+      // ).catch(err => {
+      //   console.log("Error getting document", err);
+      // })
       case 'schedule':
         db.collection('servers').doc(msg.guild.id).get()
         .then(doc=> {
@@ -267,8 +265,45 @@ client.on('message', msg => {
 
   
 
+function addScrimToSchedule(msg, data, timeValue){
+    data.team.schedule.push({
+      time : timeValue,
+      homeTeam : data.team.name,
+      awayTeam : "",
+      pending : true,
+    })
+    db.collection('servers').doc(msg.guild.id).update({
+      team : data.team
+    })
+    console.log(`Added a new scrim to ${data.name}'s schedule`)
+}
 
-
+function getConfirmation(msg, formattedListing, data, timeValue){
+  const filter = (reaction, user) => {
+    return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;
+  };
+  msg.channel.send("__Does this look good?__ \n"+ formattedListing)
+        .then(async sentMsg=>{
+            await sentMsg.react("👍")
+            await sentMsg.react("👎")
+            sentMsg.awaitReactions(filter, {max: 1, time: 60000, errors: ['time']})
+            .then(collected => {
+              const reaction = collected.first();
+          
+              if (reaction.emoji.name === '👍') {
+                addScrimToSchedule(msg, data, timeValue)
+                msg.reply('``` Listing posted to the Collegiate scheduling channel. ```');
+                client.guilds.cache(collegiateServerID).channels.cache
+                .get(collegiateSchedulingChannelID)
+                .send("__New Scrim Listing__ \n" + formattedListing)
+              } else {
+                msg.reply('```Canceled this listing```.');
+              }
+            }).catch(collected => {
+              console.log(collected)
+            });
+        })
+}
 
 function attemptToSetRoles(msg){
   var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
