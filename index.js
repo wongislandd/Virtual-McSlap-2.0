@@ -341,16 +341,8 @@ client.on('message', async msg => {
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
       if (reaction.emoji.name == INTERESTEMOJI){
         console.log(`${user.tag} reacted to a listing.`)
-        db.collection('servers').where("team.schedulers", "array-contains", schedulerTag)
-        .get()
-        .then(function(querySnapshot) {
-          querySnapshot.forEach(function(doc){
-            console.log(doc.id)
-          });
-        })
-        .catch(error => {
-          console.log(error)
-        })
+        var userServer = await findAssociatedTeam(user.tag)
+        console.log(userServer)
       }
     }
 
@@ -360,16 +352,14 @@ client.on('message', async msg => {
 
 async function findAssociatedTeam(schedulerTag){
     console.log(`Looking for teams associated with ${schedulerTag}`)
-    db.collection('servers').where("team.schedulers", "array-contains", schedulerTag)
+    return new Promise(function(resolve, reject) {
+      db.collection('servers').where("team.schedulers", "array-contains", schedulerTag)
     .get()
-    .then(function(querySnapshot) {
+    .then(querySnapshot => {
       querySnapshot.forEach(function(doc){
-        return doc.id;
+        resolve(doc.id)
       });
-    })
-    .catch(error => {
-      console.log(error)
-    })
+    })});
   }
 
 // Returns 1 if the author of the message is a scheduler, 0 if not.
