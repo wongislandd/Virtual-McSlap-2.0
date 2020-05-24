@@ -109,7 +109,7 @@ function botDescription(){
     "!registerTeam" : "Registers your teams discord within the bot's database. The correct format is !registerTeam \"<team>\" <opgg link> \n" +
                       "This will fulfill most of the setup (aside from Timezone) for your server. The channel this message was sent in will become the scheduling channel, \n"+
                       "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
-    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <EST/EDT/PST/PDT/MST/MDT/CST/CDT>",
+    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
     "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
     "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
     "!makeMeAScheduler" : "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
@@ -117,11 +117,11 @@ function botDescription(){
 }
   strToReturn = "__**Basic commands**__ \n";
   Object.entries(basicCommands).forEach(([key, value]) => {
-      strToReturn += "**"+key+"**" + " - " + value + "\n";
+    strToReturn += "**"+key+"**" + "```" + value + "```";
    });
   strToReturn += "\n__**Setting commands (requires the Scheduler role)**__ \n";
   Object.entries(configCommands).forEach(([key, value]) => {
-      strToReturn += "**"+key+"**" + " - " + value + "\n";
+      strToReturn += "**"+key+"**" + "```" + value + "```\n";
   });
   return strToReturn;
 }
@@ -301,6 +301,7 @@ client.on('message', async msg => {
         if(await isAScheduler(msg)){
           var newOPGG = msg.content.split(" ")[1]
           Team.changeOPGG(msg.guild.id, newOPGG, db)
+          msg.reply("```OPGG changed to " + newOPGG  + ".```")
         }else{
           msg.reply("Only Scheduler's can call this command!");
         }
@@ -311,8 +312,13 @@ client.on('message', async msg => {
           msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeName Stony Brook Esports**");
           return;
         }
-        var newName = msg.content.replace("!changeName ", "");
-        Team.changeName(msg.guild.id, newName, db)
+        if(await isAScheduler(msg)){
+          var newName = msg.content.replace("!changeName ", "");
+          Team.changeName(msg.guild.id, newName, db)
+          msg.reply("```Name changed to " + newName  + ".```")
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
         break;
     }
   });
@@ -335,11 +341,36 @@ client.on('message', async msg => {
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
       if (reaction.emoji.name == INTERESTEMOJI){
         console.log(`${user.tag} reacted to a listing.`)
-        findAssociatedTeam(user.tag);
+        db.collection('servers').where("team.schedulers", "array-contains", schedulerTag)
+        .get()
+        .then(function(querySnapshot) {
+          querySnapshot.forEach(function(doc){
+            console.log(doc.id)
+          });
+        })
+        .catch(error => {
+          console.log(error)
+        })
       }
     }
 
   });
+
+
+
+async function findAssociatedTeam(schedulerTag){
+    console.log(`Looking for teams associated with ${schedulerTag}`)
+    db.collection('servers').where("team.schedulers", "array-contains", schedulerTag)
+    .get()
+    .then(function(querySnapshot) {
+      querySnapshot.forEach(function(doc){
+        return doc.id;
+      });
+    })
+    .catch(error => {
+      console.log(error)
+    })
+  }
 
 // Returns 1 if the author of the message is a scheduler, 0 if not.
 async function isAScheduler(msg){
@@ -352,22 +383,10 @@ async function isAScheduler(msg){
     console.log("Not found to be a Scheduler!")
     return 0;
   }
-}
-
-
-function findAssociatedTeam(schedulerTag){
-  console.log(`Looking for teams associated with ${schedulerTag}`)
-  db.collection('servers').where("team.schedulers", "in", [schedulerTag])
-  .get()
-  .then(function(querySnapshot) {
-    querySnapshot.forEach(function(doc){
-      console.log(doc.id, " => ", doc.data());
-    });
-  })
-  .catch(error =>
-    console.log(error))
   
 }
+
+
   
 function wipeTeamsSchedule(msg){
     db.collection('servers').doc(msg.guild.id).get()
@@ -379,6 +398,7 @@ function wipeTeamsSchedule(msg){
         .update({
           team : team
         })
+        msg.reply("``` Schedule wiped. ```")
     }).catch(error =>
       console.log(error)
     )
