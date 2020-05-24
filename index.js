@@ -104,13 +104,16 @@ function botDescription(){
   var basicCommands = {
     // Basic commands
     "!info" : "Returns a list of supported commands.",
-    "!serverSettings" : "Displays the current server settings."
+    "!serverSettings" : "Displays the current server settings.",
+    "!schedule" : "Displays the team's schedule."
   }
   var configCommands = {
     // Config commands
     "!registerTeam" : "Registers your teams discord within the bot's database. The correct format is !registerTeam \"<team>\" <opgg link> \n" +
                       "This will fulfill most of the setup (aside from Timezone) for your server. The channel this message was sent in will become the scheduling channel, \n"+
                       "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
+    "!post" : "Prepare to post a new scrim listing. The correct format is !post <Month> <Day> <Time> <AM/PM>",
+    "!remove" : "Removes a **pending** scrim from your teams schedule by index. The correct format is !remove <index>",
     "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
     "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
     "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
