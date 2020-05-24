@@ -106,8 +106,14 @@ function botDescription(){
   }
   var configCommands = {
     // Config commands
-    "!registerTeam" : "Registers your teams discord within the bot's database. This is required. The correct format is !registerTeam \"<team>\" <opgg link>",
-    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <EST/EDT/PST/PDT/MST/MDT/CST/CDT>"
+    "!registerTeam" : "Registers your teams discord within the bot's database. The correct format is !registerTeam \"<team>\" <opgg link> \n" +
+                      "This will fulfill most of the setup (aside from Timezone) for your server. The channel this message was sent in will become the scheduling channel, \n"+
+                      "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
+    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <EST/EDT/PST/PDT/MST/MDT/CST/CDT>",
+    "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
+    "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
+    "!makeMeAScheduler" : "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
+    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeAScheduler <tag>"
 }
   strToReturn = "__**Basic commands**__ \n";
   Object.entries(basicCommands).forEach(([key, value]) => {
@@ -169,6 +175,10 @@ client.on('message', async msg => {
             msg.reply("The input was invalid. The correct format is !registerTeam \"<team>\" <opgg link> \n**ex. !registerTeam \"Team Chris\" https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
             return
         }
+        if (!await isAScheduler(msg)){
+          msg.reply("Only schedulers can use this command!")
+          return;
+        }
         var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
         var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
         attemptToSetRoles(msg);
@@ -200,6 +210,10 @@ client.on('message', async msg => {
       if(!msg.content.match(validInput)){
         msg.reply("The input was invalid. The correct format is !post <Month> <Day> <Time> <AM/PM>\n**ex. !post May 20 5:00 PM**");
         return
+      }
+      if (!await isAScheduler(msg)){
+        msg.reply("Only schedulers can use this command!")
+        return;
       }
       var month = args[1];
       var day = args[2];
@@ -253,11 +267,14 @@ client.on('message', async msg => {
         )
         break;
       case 'clear':
-        wipeTeamsSchedule(msg);
+        if (await isAScheduler(msg)) {
+          wipeTeamsSchedule(msg)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
         break;
       case 'makeMeAScheduler':
-        var member = msg.guild.members.fetch(msg.author.id);
-        if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
+        if (await isAScheduler(msg)) {
           addAScheduler(msg)
         }else{
           msg.reply("Only Scheduler's can call this command!");
@@ -269,8 +286,7 @@ client.on('message', async msg => {
           msg.reply("The input was invalid. The correct format is !removeAScheduler <tag> **ex. !removeAScheduler chriss#8261**");
           return;
         }
-        var member = msg.guild.members.fetch(msg.author.id);
-        if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
+        if (await isAScheduler(msg)) {
           removeAScheduler(msg)
         }else{
           msg.reply("Only Scheduler's can call this command!");
@@ -282,8 +298,12 @@ client.on('message', async msg => {
           msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeOPGG https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
           return;
         }
-        var newOPGG = msg.content.split(" ")[1]
-        Team.changeOPGG(msg.guild.id, newOPGG, db)
+        if(await isAScheduler(msg)){
+          var newOPGG = msg.content.split(" ")[1]
+          Team.changeOPGG(msg.guild.id, newOPGG, db)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
         break;
       case 'changeName':
         var validInput = /changeName[\s].+/
@@ -321,7 +341,18 @@ client.on('message', async msg => {
 
   });
 
-
+// Returns 1 if the author of the message is a scheduler, 0 if not.
+async function isAScheduler(msg){
+  var member = msg.guild.members.fetch(msg.author.id);
+  console.log(`Checking if ${msg.author.tag} is a scheduler.`)
+  if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
+    console.log("Scheduler found!")
+    return 1;
+  }else{
+    console.log("Not found to be a Scheduler!")
+    return 0;
+  }
+}
 
 
 function findAssociatedTeam(schedulerTag){
