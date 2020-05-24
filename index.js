@@ -50,7 +50,8 @@ const collegiateServerID = "713578165511127132"
 const collegiateSchedulingChannelID = "713866406705233952"
 const BOTID = "713577813159968800"
 
-
+const ACCEPTEMOJI = "🟢"
+const DECLINEEMOJI = "🔴"
 const CONFIRMEMOJI = "👍"
 const CANCELEMOJI = "👎"
 const INTERESTEMOJI = "🤘🏼";
@@ -103,6 +104,7 @@ function botDescription(){
   var basicCommands = {
     // Basic commands
     "!info" : "Returns a list of supported commands.",
+    "!serverSettings" : "Displays the current server settings."
   }
   var configCommands = {
     // Config commands
@@ -113,7 +115,7 @@ function botDescription(){
     "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
     "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
     "!makeMeAScheduler" : "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
-    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeAScheduler <tag>"
+    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeScheduler <tag>"
 }
   strToReturn = "__**Basic commands**__ \n";
   Object.entries(basicCommands).forEach(([key, value]) => {
@@ -129,6 +131,9 @@ function botDescription(){
 
 
 client.on('message', async msg => {
+  if (msg.channel.type == "dm"){ // for pms, maybe reply but make sure it's not responding to itself.
+    return(console.log("A message was sent through a DM and has been ignored."));
+  }
   if (!msg.content.startsWith(PREFIX)){
     return;
   }
@@ -280,10 +285,10 @@ client.on('message', async msg => {
           msg.reply("Only Scheduler's can call this command!");
         }
         break;
-      case 'removeAScheduler':
-        var validInput = /removeAScheduler[\s].+#[\d]{4}/
+      case 'removeScheduler':
+        var validInput = /removeScheduler[\s].+#[\d]{4}/
         if(!msg.content.match(validInput)){
-          msg.reply("The input was invalid. The correct format is !removeAScheduler <tag> **ex. !removeAScheduler chriss#8261**");
+          msg.reply("The input was invalid. The correct format is !removeAScheduler <tag> **ex. !removeScheduler chriss#8261**");
           return;
         }
         if (await isAScheduler(msg)) {
@@ -320,6 +325,9 @@ client.on('message', async msg => {
           msg.reply("Only Scheduler's can call this command!");
         }
         break;
+      case 'makeMattStop':
+        msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
+        break;
     }
   });
 
@@ -341,13 +349,92 @@ client.on('message', async msg => {
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
       if (reaction.emoji.name == INTERESTEMOJI){
         console.log(`${user.tag} reacted to a listing.`)
-        var userServer = await findAssociatedTeam(user.tag)
-        console.log(userServer)
+        var awayServerID = await findAssociatedTeam(user.tag)
+        if (awayServerID == "NOT FOUND"){
+          user.send("I see you reacted to a scrim listing but I couldn't find you registered under a team in my database! Please make sure you're registered.")
+          return;
+        }else{
+          console.log(`${user.tag} belongs to ${client.guilds.cache.get(awayServerID).name}`)
+          var content = reaction.message.content
+          // Find the scrim time, this will be used to uniquely identify the scrim
+          var indexOfStart = content.indexOf(",", content.indexOf("**Time**: "))
+          var timeOfScrim = content.substring(indexOfStart+2)
+          // Similarly, Find the first listed manager by the format of the listing and parse from there.
+          // This will need to be changed if the format of the posting is changed. Or I come up
+          // with a more clever idea. Should also just make it go through all the managers if one isn't found.
+          // This is a secondary concern.
+          indexOfStart = content.indexOf("**Schedulers**: ")
+          var firstListedSchedulerTag = content.substring(indexOfStart + 16, content.indexOf(","))
+          var homeServerID = await findAssociatedTeam(firstListedSchedulerTag)
+          if (homeServerID == "NOT FOUND"){
+            return;
+          }
+          // if (awayServerID == homeServerID){
+          //   user.send("You reacted to your own server's listing. I ignored you sorry uwu")
+          //   return;
+          // }
+          console.log(`${firstListedSchedulerTag} belongs to ${client.guilds.cache.get(homeServerID).name}`)
+          showInterest(awayServerID, homeServerID, timeOfScrim)
+        }
       }
     }
 
   });
 
+
+
+async function showInterest(awayServerID, homeServerID, timeOfScrim){
+  var awaySchedulingChannelID = await findSchedulingChannel(awayServerID);
+  var homeSchedulingChannelID = await findSchedulingChannel(homeServerID);
+  var awayTeamData = await getTeamData(awayServerID);
+  var homeTeamData = await getTeamData(homeServerID);
+  var awayServerChannel = client.guilds.cache.get(awayServerID).channels.cache.get(awaySchedulingChannelID)
+  var homeServerChannel = client.guilds.cache.get(homeServerID).channels.cache.get(homeSchedulingChannelID)
+  homeServerChannel.send(
+    "__**Scrim inquiry regarding the listing for " + timeOfScrim + ". React " + ACCEPTEMOJI + " to accept or " + DECLINEEMOJI + " to decline.**__\n" + 
+    Team.teamAsString(awayTeamData.name, awayTeamData.team.schedulers, awayTeamData.team.OPGG)).then(async sentMsg=>{
+      var filter = (reaction, user) => {
+        return [ACCEPTEMOJI, DECLINEEMOJI].includes(reaction.emoji.name) && user.id != BOTID && isAScheduler2(awayServerID, user.id) ;
+      };
+      await sentMsg.react(ACCEPTEMOJI)
+      await sentMsg.react(DECLINEEMOJI)
+      sentMsg.awaitReactions(filter, {max: 1, time: 60000, errors: ['time']})
+      .then(collected => {
+        const reaction = collected.first();
+        if (reaction.emoji.name === ACCEPTEMOJI) {
+          homeServerChannel.send("```" + `Accepted offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
+        } else {
+          homeServerChannel.send("```" + `Declined offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
+        }
+      }).catch(collected => {
+        console.log(collected)
+      });
+  })
+}
+
+async function findSchedulingChannel(serverid){
+  console.log(`Looking for teams associated with ${serverid}`)
+  return new Promise(function(resolve, reject) {
+    db.collection('servers').doc(serverid)
+  .get()
+  .then(doc => {
+      resolve(doc.data().schedulingChannelID)
+  }).then(() =>
+      resolve("NOT FOUND, SHOULD NEVER HAPPEN.")
+  )});
+}
+
+// Given the serverid of a team's discord, return their data.
+async function getTeamData(serverid){
+  return new Promise(function(resolve, reject) {
+    db.collection('servers').doc(serverid)
+  .get()
+  .then(doc => {
+      resolve(doc.data())
+  }).then(() =>
+      resolve("NOT FOUND, SHOULD NEVER HAPPEN.")
+  )});
+}
 
 
 async function findAssociatedTeam(schedulerTag){
@@ -359,8 +446,10 @@ async function findAssociatedTeam(schedulerTag){
       querySnapshot.forEach(function(doc){
         resolve(doc.id)
       });
-    })});
-  }
+    }).then(() =>
+        resolve("NOT FOUND")
+    )});
+}
 
 // Returns 1 if the author of the message is a scheduler, 0 if not.
 async function isAScheduler(msg){
@@ -373,8 +462,18 @@ async function isAScheduler(msg){
     console.log("Not found to be a Scheduler!")
     return 0;
   }
-  
 }
+async function isAScheduler2(serverid, userid){
+  var member = client.guilds.cache.get(serverid).members.fetch(userid);
+  if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
+    console.log("Scheduler found!")
+    return 1;
+  }else{
+    console.log("Not found to be a Scheduler!")
+    return 0;
+  }
+}
+
 
 
   
@@ -411,8 +510,8 @@ function addScrimToSchedule(msg, data, timeValue){
 }
 
 function getPostingConfirmation(msg, formattedListing, data, timeValue){
-  const filter = (reaction, user) => {
-    return [CONFIRMEMOJI, CANCELEMOJI].includes(reaction.emoji.name) && user.id === msg.author.id;
+  var filter = (reaction, user) => {
+    return [CONFIRMEMOJI, CANCELEMOJI].includes(reaction.emoji.name) && user.id != BOTID && user.id === msg.author.id;
   };
   msg.channel.send("__Does this look good?__ \n"+ formattedListing)
         .then(async sentMsg=>{
@@ -475,7 +574,7 @@ function removeAScheduler(msg){
       .update({
         team : team
       })
-      msg.reply("```" + msg.author.tag + " removed as a scheduler from " + team.name + "```")
+      msg.reply("```" + schedulerToRemove + " removed as a scheduler from " + team.name + "```")
     }else{
       msg.reply("I couldn't find that scheduler in your list.")
     }

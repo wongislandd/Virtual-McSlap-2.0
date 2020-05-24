@@ -20,7 +20,6 @@ class Team{
     static printSchedule(data, msg, channelToSendTo){
         // Sort the schedule first
         var schedule = data.team.schedule.sort(this.scrimComparator);
-        console.log(schedule)
         var channel = msg.guild.channels.cache.get(channelToSendTo)
         var scrim = {}
         for (var i=0;i<schedule.length;i++){
@@ -53,6 +52,13 @@ class Team{
         }
         return 0
     };
+
+    static teamAsString(name, schedulers, OPGG){
+        var str = `**Team**: ${name}` +
+        `\n**Schedulers**: ${schedulers}` +
+        `\n**OPGG**: ${OPGG}`
+        return str;
+    }
 }
 
 
