@@ -276,6 +276,24 @@ client.on('message', async msg => {
           msg.reply("Only Scheduler's can call this command!");
         }
         break;
+      case 'changeOPGG':
+        var validInput = /changeOPGG[\s]+(https:\/\/na.op.gg\/[\S]+)/
+        if(!msg.content.match(validInput)){
+          msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeOPGG https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
+          return;
+        }
+        var newOPGG = msg.content.split(" ")[1]
+        Team.changeOPGG(msg.guild.id, newOPGG, db)
+        break;
+      case 'changeName':
+        var validInput = /changeName[\s].+/
+        if(!msg.content.match(validInput)){
+          msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeName Stony Brook Esports**");
+          return;
+        }
+        var newName = msg.content.replace("!changeName ", "");
+        Team.changeName(msg.guild.id, newName, db)
+        break;
     }
   });
 
@@ -302,10 +320,6 @@ client.on('message', async msg => {
     }
 
   });
-
-
-
-
 
 
 

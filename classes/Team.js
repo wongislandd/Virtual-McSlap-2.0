@@ -32,6 +32,18 @@ class Team{
             }
         }
     }
+    static changeOPGG(serverid, OPGG, db){
+        console.log("ChangeOPGG Called.");
+        db.collection('servers').doc(serverid).update({
+            "team.OPGG" : OPGG
+        })
+    }
+    static changeName(serverid, name, db){
+        console.log("ChangeName Called.");
+        db.collection('servers').doc(serverid).update({
+            "team.name" : name
+        })
+    }
     static scrimComparator = function (a,b){
         if (a.time > b.time){
             return 1
