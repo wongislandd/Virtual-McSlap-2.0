@@ -6,7 +6,11 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 const db = admin.firestore()
+
 // Run by "node index.js"
+
+
+require('dotenv').config()
 
 // Require custom classes
 const Team = require('./classes/Team')
@@ -95,10 +99,6 @@ client.on("guildDelete", (guild) => {
   console.log(`Removing ${guild.id} (${guild.name}) from the database.`)
   db.collection('servers').doc(guild.id).delete()
 })
-
-client.on('ready', () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-});
 
 
 // Main function for waiting for messages.
@@ -246,6 +246,15 @@ client.on('message', async msg => {
         break;
     }
   });
+
+
+
+
+
+
+
+
+// PRIMARY FUNCTIONS FOR WHEN CERTAIN COMMANDS ARE CALLED. USED TO CONDENSE.
 
 // A mapping of the bots commands, called by the !info command
 function botDescription(){
@@ -401,6 +410,8 @@ function printSchedule(msg){
 
 
 
+
+// Helper functions
 
 
 // Process for when a reaction is added
@@ -803,5 +814,10 @@ function checkForDefaultFields(msg){
 
 // Gets the current details of the server
 
-client.login("NzEzNTc3ODEzMTU5OTY4ODAw.XsiJLg.FIR6eETw2bMcOcvGm0stomqxeLE");
+// Process for when the bot turns on.
+client.on('ready', () => {
+  console.log(`Logged in as ${client.user.tag}!`);
+});
+
+client.login(process.env.BOT_TOKEN);
 
