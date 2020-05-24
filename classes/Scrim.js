@@ -20,6 +20,7 @@ class Scrim{
         return str;
     }
 
+    // Time must be a moment.
     static formatIntoConfirmedString(teamSendingTo, time, timeZone, homeTeamName, homeTeamSchedulers, homeTeamOPGG, awayTeamName, awayTeamSchedulers, awayTeamOPGG){
         var readableTime = time.tz(timeZone).format("dddd, MMMM Do YYYY, h:mm:ss a z")
         if (homeTeamName == teamSendingTo){

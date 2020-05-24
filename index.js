@@ -239,7 +239,7 @@ client.on('message', async msg => {
         }
         break;
     case 'ranked?':
-        if(Math.random()*5 + 1 > 4){
+        if(Math.random()*10 + 1 > 9){
           msg.channel.send("PAKRAT SHOULD PLAY RANKED.")
         }else{
           msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
@@ -494,7 +494,7 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
         const reaction = collected.first();
         if (reaction.emoji.name === ACCEPT_EMOJI) {
           // Accept offer, change pending status, add the away team, add to away team's schedule
-          var indexOfScrim = findScrimIndexByTime(homeTeamData.team.schedule, timeOfScrim);
+          var indexOfScrim = findScrimIndexByTimeStr(homeTeamData.team.schedule, timeOfScrim);
           console.log(indexOfScrim);
           if (indexOfScrim == -1){
             homeServerChannel.send("Something went wrong. Please contact chriss#8261.")
@@ -549,7 +549,7 @@ async function getTeamData(serverid){
 
 
 // Finds a scrim by time
-function findScrimIndexByTime(schedule, time){
+function findScrimIndexByTimeStr(schedule, time){
   console.log(`Looking for a scrim for ${time}`)
   // Convert time to moment.js value
   time = time.replace(/st|nd|th/, "")
@@ -557,13 +557,22 @@ function findScrimIndexByTime(schedule, time){
   var dateValue = date.valueOf()
   for (var i=0;i<schedule.length;i++){
     if (schedule[i].time == dateValue){
+      return i;
+    }
+  }
+  return -1;
+}
+// Returns the index in the sorted position
+function findScrimIndexByTimeNum(schedule, time){
+  console.log(`Looking for a scrim for ${time}`)
+  for (var i=0;i<schedule.length;i++){
+    if (schedule[i].time == time){
       console.log("Scrim index returning " + i)
       return i;
     }
   }
   return -1;
 }
-
 // Given the tag of a user, search for if they are listed as a scheduler in any channel.
 // Currently if a user is in multiple channels, it will return the first one.
 async function findAssociatedTeam(schedulerTag){
@@ -643,9 +652,39 @@ async function wipeTeamsSchedule(msg){
           team : team
         })
         msg.reply("``` Schedule wiped. ```")
-    }).catch(error =>
-      console.log(error)
-    )
+    }).catch(error =>console.log(error))
+}
+
+async function removeConfirmedScrim(scrim){
+  // Find the scrim in both team's schedules and remove it.
+  var firstListedHomeScheduler = scrim.homeTeamSchedulers[0]
+  var firstListedAwayScheduler = scrim.awayTeamSchedulers[0]
+  var homeTeamServerID = await findAssociatedTeam(firstListedHomeScheduler)
+  var awayTeamServerID = await findAssociatedTeam(firstListedAwayScheduler)
+  // Remove and update from home
+  db.collection('servers').doc(homeTeamServerID).get()
+  .then(doc => {
+    let data = doc.data()
+    let schedule = data.team.schedule.sort(Team.scrimComparator)
+    var index = findScrimIndexByTimeNum(schedule, scrim.time)
+    schedule.splice(index, 1)
+    db.collection('servers').doc(homeTeamServerID)
+    .update({
+      team : data.team
+    })
+  }).catch(error => console.log(error))
+  // Remove and update from away
+  db.collection('servers').doc(awayTeamServerID).get()
+  .then(doc => {
+    let data = doc.data()
+    let schedule = data.team.schedule.sort(Team.scrimComparator)
+    var index = findScrimIndexByTimeNum(schedule, scrim.time)
+    schedule.splice(index, 1)
+    db.collection('servers').doc(awayTeamServerID)
+    .update({
+      team : data.team
+    })
+  }).catch(error => console.log(error))
 }
 
 
@@ -844,50 +883,52 @@ client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
 });
 
+// Check interval is in minutes
+const CHECK_INTERVAL = .05
 
-bot.on('ready', function(){
-  setInterval(function(){
-      keyArr = guildScrims.keyArray();
-          for (j=0;j < keyArr.length; j++){ // for each server
-                  server = bot.guilds.get(keyArr[j]);
-                  console.log("Inspecting: " + server.name);
-                  channel = bot.guilds.get(server.id).channels.get(guildSettings.get(server.id,"botChannel")); // set to the custom bot channel
-                  if (channel == undefined){
-                      try{
-                          channel = server.channels.find(channel => channel.name === "general");// find the text channel named general
-                      }
-                      catch{
-                          guild.channels.sort(function(chan1,chan2){
-                              if(chan1.type!==`text`) return 1;
-                              if(!chan1.permissionsFor(guild.me).has(`SEND_MESSAGES`)) return -1;
-                              return chan1.position < chan2.position ? -1 : 1;
-                          }).first().send(`We could not find a server to send messages to. Make sure you assign a bot channel or have a "general" text channel.`);
-                          continue;
-                      }
-                  }
-                  scrimSchedule = buildScrimArray(getSchedule(guildScrims.keyArray()[j]));
-                  var currentTime = new Date();
-                  for (i=0;i<scrimSchedule.length;i++){
-                          console.log("Inspecting the scrim " + scrimSchedule[i].team + " " + scrimSchedule[i].date);
-                          var timer = (scrimSchedule[i].date).getTime() - currentTime;
-                          console.log(timer);
-                          if (timer <= 0) { // tags the @Player role and sends a message. 0 or less
-                              channel.send("<@&"+guildSettings.get(server.id, "playerRole") +"> `"+ makeReadableDate(formatDate(scrimSchedule[i].date, guildSettings.get(server.id,"timezone"))) + " is happening now! Removing it from the scrim schedule.` \n" + scrimSchedule[i].OPGG);
-                              scrimSchedule = removeFromSchedule(i, scrimSchedule);
-                              if (scrimSchedule == -1){
-                                  message.reply("Multiple scrims have been removed.");
-                              }
-                              console.log(scrimSchedule);
-                          }
-                          else if (timer < 1800000 && timer > 900000){ // 15-30 min
-                             channel.send("<@&"+guildSettings.get(server.id, "playerRole")+"> `" +  makeReadableDate(formatDate(scrimSchedule[i].date, guildSettings.get(server.id,"timezone"))) + " is happening in the next 30 minutes. Get ready. `");
-                          }
-                          else if (timer < 3600000 && timer > 2700000){ // 45 min- 1 hour
-                              channel.send("<@&"+guildSettings.get(server.id, "playerRole") + "> `" + makeReadableDate(formatDate(scrimSchedule[i].date, guildSettings.get(server.id,"timezone"))) + " is happening within the hour. Be there.`");
-                          }
-                  }
-                  updateDatabase(guildScrims.keyArray()[j], scrimSchedule);
-              }}, 900000); // <--- Interval of the check, currently 15 minutes.
+// Checks for upcoming scrims
+client.on('ready', async function(){
+  setInterval(async function(){
+        console.log("Running routine check for upcoming scrims.")
+        var snapshot = await db.collection('servers').get()
+        var docs = snapshot.docs;
+        var currentTime = new Date().valueOf()
+        // Need to track what scrims have been removed since it's a snapshot and won't be as recent as can be.
+        // When a scrim is removed, it's actually in there twice so ignore it the second time around.
+        // Uniquely identify them by msgID, should have started this practice earlier, could go back.
+        var scrimsRemovedThusFar = []
+        docs.map(async doc => {
+          let data = doc.data();
+          var schedule = data.team.schedule;
+          // The Discord server ID is stored in doc.id
+          var schedulingChannel = client.guilds.cache.get(doc.id).channels.cache.get(data.schedulingChannelID)
+          var playerRole = `<@&${data.playerRoleID}>`
+          for (var i=0;i<schedule.length;i++){
+            var scrim = schedule[i]
+            if (scrim.pending == true || scrimsRemovedThusFar.includes(scrim.msgID)){
+              continue;
+            }
+            var timeUntilScrim = scrim.time - currentTime
+            var timeOfScrim = moment.tz(scrim.time, TIMEZONES[data.timeZone])
+            if (timeUntilScrim <= 0){
+              schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG + 
+                "\n*The scrim is happening! Get in the lobby!*"))
+              // Remove the scrim from both teams schedules
+              await removeConfirmedScrim(scrim).catch(error=>console.log(error))
+              console.log(`Pushing ${scrim.msgID} to array`)
+              scrimsRemovedThusFar.push(scrim.msgID)
+            }
+            else if (timeUntilScrim< 1800000 && timeUntilScrim > 900000){ // 15-30 min
+              schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG + 
+                "\n*The scrim is happening in the next 30 minutes. Get ready!*"))
+            }
+            else if(timeUntilScrim < 360000 && timeUntilScrim > 2700000){ // 45 - 60 min
+              schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG + 
+                "\n*The scrim is happening within an hour.*"))
+            }
+          }
+        })
+          }, CHECK_INTERVAL * 60000)//900000); // <--- Interval of the check, currently 15 minutes.
 });
 
 client.login(process.env.BOT_TOKEN);
