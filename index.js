@@ -46,17 +46,18 @@ const MONTHS = {
 
 
 // COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
-const collegiateServerID = "713578165511127132"
-const collegiateSchedulingChannelID = "713866406705233952"
+const COLLEGIATE_SERVER_ID = "713578165511127132"
+const COLLEGIATE_SCHEDULING_CHANNELID = "713866406705233952"
 const BOTID = "713577813159968800"
 
-const ACCEPTEMOJI = "🟢"
-const DECLINEEMOJI = "🔴"
-const CONFIRMEMOJI = "👍"
-const CANCELEMOJI = "👎"
-const INTERESTEMOJI = "🤘🏼";
+const ACCEPT_EMOJI = "🟢"
+const DECLINE_EMOJI = "🔴"
+const CONFIRM_EMOJI = "👍"
+const CANCEL_EMOJI = "👎"
+const INTEREST_EMOJI = "🤘🏼";
 
 
+// Process for when the bot joins a new server
 client.on("guildCreate", (guild) => {
   console.log(`Adding ${guild.id} (${guild.name}) to the database.`)
     if(guild.roles.cache.find(role => role.name === "Scheduler") == null){ // sets the scheduler role to the custom created one by ID
@@ -89,6 +90,7 @@ client.on("guildCreate", (guild) => {
 }
 );
 
+// Process for when the bot leaves a server
 client.on("guildDelete", (guild) => {
   console.log(`Removing ${guild.id} (${guild.name}) from the database.`)
   db.collection('servers').doc(guild.id).delete()
@@ -99,44 +101,12 @@ client.on('ready', () => {
 });
 
 
-
-function botDescription(){
-  var basicCommands = {
-    // Basic commands
-    "!info" : "Returns a list of supported commands.",
-    "!serverSettings" : "Displays the current server settings.",
-    "!schedule" : "Displays the team's schedule."
-  }
-  var configCommands = {
-    // Config commands
-    "!registerTeam" : "Registers your teams discord within the bot's database. The correct format is !registerTeam \"<team>\" <opgg link> \n" +
-                      "This will fulfill most of the setup (aside from Timezone) for your server. The channel this message was sent in will become the scheduling channel, \n"+
-                      "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
-    "!post" : "Prepare to post a new scrim listing. The correct format is !post <Month> <Day> <Time> <AM/PM>",
-    "!remove" : "Removes a **pending** scrim from your teams schedule by index. The correct format is !remove <index>",
-    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
-    "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
-    "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
-    "!makeMeAScheduler" : "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
-    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeScheduler <tag>"
-}
-  strToReturn = "__**Basic commands**__ \n";
-  Object.entries(basicCommands).forEach(([key, value]) => {
-    strToReturn += "**"+key+"**" + "```" + value + "```";
-   });
-  strToReturn += "\n__**Setting commands (requires the Scheduler role)**__ \n";
-  Object.entries(configCommands).forEach(([key, value]) => {
-      strToReturn += "**"+key+"**" + "```" + value + "```\n";
-  });
-  return strToReturn;
-}
-
-
-
+// Main function for waiting for messages.
 client.on('message', async msg => {
   if (msg.channel.type == "dm"){ // for pms, maybe reply but make sure it's not responding to itself.
     return(console.log("A message was sent through a DM and has been ignored."));
   }
+  // Ignore messages that do not start with the specified prefix.
   if (!msg.content.startsWith(PREFIX)){
     return;
   }
@@ -145,29 +115,15 @@ client.on('message', async msg => {
     case 'info':
         msg.channel.send(botDescription())
         break;
+    case 'roles':
+        msg.channel.send(rolesDescription())
+        break;
     case 'serverSettings':
         if(checkForDefaultFields(msg) == -1){
           console.log("An uninitialized user attempted to use a command!");
           return;
         }
-        db.collection('servers').doc(msg.guild.id).get()
-        .then(doc => { 
-            var str = "__Here are the details I have on record for your server: __"
-            let data = doc.data()
-            str += `\n**Server Name:** ${data.name}`
-            str += `\n**Preferred Time Zone:** ${data.timeZone}`
-            str += `\n**Player Role:** ${msg.guild.roles.cache.get(data.playerRoleID)}`
-            str += `\n**Scheduler Role:** ${msg.guild.roles.cache.get(data.schedulerRoleID)}`
-            str += `\n**Scheduling Channel:** ${msg.guild.channels.cache.get(data.schedulingChannelID)}`
-            str += `\n**Team Name:** ${data.team.name}`
-            str += `\n**Team Schedulers:** ${data.team.schedulers}`
-            str += `\n**OPGG:** ${data.team.OPGG}`
-            str += ""
-            msg.channel.send(str);
-        }).catch(err => {
-          console.log("Error getting document", err);
-          somethingWrong = 1;
-        })
+        showServerSettings(msg)
         break;
     case 'ping' :
         msg.reply("Pong!")
@@ -183,21 +139,7 @@ client.on('message', async msg => {
           msg.reply("Only schedulers can use this command!")
           return;
         }
-        var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
-        var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
-        attemptToSetRoles(msg);
-        db.collection('servers').doc(msg.guild.id).update({
-          team : {
-            discordChannelID : msg.guild.id, 
-            schedulers: [msg.author.tag], 
-            name: teamName, 
-            OPGG: OPGG, 
-            schedule : [],
-          },
-          schedulingChannelID : msg.channel.id,
-        })
-        console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
-        msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```")
+        registerTeam(msg);
         break;
     case 'setTimeZone':
       var validInput = /setTimeZone[\s]+(Eastern|Pacific|Mountain|Central)/
@@ -219,7 +161,187 @@ client.on('message', async msg => {
         msg.reply("Only schedulers can use this command!")
         return;
       }
-      var month = args[1];
+      post(msg, args);
+      break
+    case 'schedule':
+        if(checkForDefaultFields(msg) == -1){
+          console.log("An uninitialized user attempted to use a command!");
+          return;
+        }
+        printSchedule(msg);
+        break;
+    case 'remove':
+        var validInput = /remove[\s]+[\d]+/
+        if(!msg.content.match(validInput)){
+            msg.reply("The input was invalid. The correct format is !post <Month> <Day> <Time> <AM/PM>\n**ex. !post May 20 5:00 PM**");
+            return
+        }
+        if (await isAScheduler(msg)) {
+          var indexToRemove = msg.content.split(" ")[1]
+          removeScrimByIndex(msg, indexToRemove)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+    case 'clear':
+        if (await isAScheduler(msg)) {
+          wipeTeamsSchedule(msg)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+    case 'makeMeAScheduler':
+        if (await isAScheduler(msg)) {
+          addAScheduler(msg)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+    case 'removeScheduler':
+        var validInput = /removeScheduler[\s].+#[\d]{4}/
+        if(!msg.content.match(validInput)){
+          msg.reply("The input was invalid. The correct format is !removeAScheduler <tag> **ex. !removeScheduler chriss#8261**");
+          return;
+        }
+        if (await isAScheduler(msg)) {
+          removeAScheduler(msg)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+    case 'changeOPGG':
+        var validInput = /changeOPGG[\s]+(https:\/\/na.op.gg\/[\S]+)/
+        if(!msg.content.match(validInput)){
+          msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeOPGG https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
+          return;
+        }
+        if(await isAScheduler(msg)){
+          var newOPGG = msg.content.split(" ")[1]
+          Team.changeOPGG(msg.guild.id, newOPGG, db)
+          msg.reply("```OPGG changed to " + newOPGG  + ".```")
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+    case 'changeName':
+        var validInput = /changeName[\s].+/
+        if(!msg.content.match(validInput)){
+          msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeName Stony Brook Esports**");
+          return;
+        }
+        if(await isAScheduler(msg)){
+          var newName = msg.content.replace("!changeName ", "");
+          Team.changeName(msg.guild.id, newName, db)
+          msg.reply("```Name changed to " + newName  + ".```")
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+    case 'ranked?':
+        if(Math.random()*5 + 1 > 4){
+          msg.channel.send("PAKRAT SHOULD PLAY RANKED.")
+        }else{
+          msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
+        }
+        break;
+    }
+  });
+
+// A mapping of the bots commands, called by the !info command
+function botDescription(){
+  var basicCommands = {
+    // Basic commands
+    "!info" : "Returns a list of supported commands.",
+    "!serverSettings" : "Displays the current server settings.",
+    "!schedule" : "Displays the team's schedule.",
+    "!roles" : "Shows information about roles that the bot uses."
+  }
+  var configCommands = {
+    // Config commands
+    "!registerTeam" : "Registers your teams discord within the bot's database. The correct format is !registerTeam \"<team>\" <opgg link> \n" +
+                      "This will fulfill most of the setup (aside from Timezone) for your server. The channel this message was sent in will become the scheduling channel. "+
+                      "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
+    "!post" : "Prepare to post a new scrim listing. The correct format is !post <Month> <Day> <Time> <AM/PM>",
+    "!remove" : "Removes a **pending** scrim from your teams schedule by index. The correct format is !remove <index>",
+    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
+    "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
+    "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
+    "!makeMeAScheduler" : "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
+    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeScheduler <tag>"
+}
+
+  strToReturn = "__**Basic commands (anyone can use these)**__ \n";
+  Object.entries(basicCommands).forEach(([key, value]) => {
+    strToReturn += "**"+key+"**" + "```" + value + "```";
+   });
+  strToReturn += "\n__**Setting commands (requires the Scheduler role)**__ \n";
+  Object.entries(configCommands).forEach(([key, value]) => {
+      strToReturn += "**"+key+"**" + "```" + value + "```\n";
+  });
+  return strToReturn;
+}
+
+// A mapping of roles and descriptions, called by the !role command
+function rolesDescription(){
+  var roles =  {
+    // Description of roles
+    "Scheduler" : "A scheduler must have the @Scheduler role in the Discord and then register themselves to the bot with !makeMeAScheduler. A registered scheduler becomes the representative" +
+                 " for your server's discord. There can be multiple schedulers per server. \n"  +
+                 "Schedulers can post, inquire, and accept or deny scrim requests.",
+    "Player" : "Users with the @Player role are tagged when a scrim is coming up soon."
+ }
+ strToReturn = "\n__**Role Descriptions**__ \n";
+ Object.entries(roles).forEach(([key, value]) => {
+     strToReturn += "**"+key+"**" + "```" + value + "```\n";
+ });
+ return strToReturn;
+}
+
+
+// Queries firestore and returns various information about the server's settings.
+function showServerSettings(msg){
+  db.collection('servers').doc(msg.guild.id).get()
+  .then(doc => { 
+      var str = "__Here are the details I have on record for your server: __"
+      let data = doc.data()
+      str += `\n**Server Name:** ${data.name}`
+      str += `\n**Preferred Time Zone:** ${data.timeZone}`
+      str += `\n**Player Role:** ${msg.guild.roles.cache.get(data.playerRoleID)}`
+      str += `\n**Scheduler Role:** ${msg.guild.roles.cache.get(data.schedulerRoleID)}`
+      str += `\n**Scheduling Channel:** ${msg.guild.channels.cache.get(data.schedulingChannelID)}`
+      str += `\n**Team Name:** ${data.team.name}`
+      str += `\n**Team Schedulers:** ${data.team.schedulers}`
+      str += `\n**OPGG:** ${data.team.OPGG}`
+      str += ""
+      msg.channel.send(str);
+  }).catch(err => {
+    console.log("Error getting document", err);
+    somethingWrong = 1;
+  })
+}
+
+// Registers a team in the firestore
+function registerTeam(msg){
+  var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
+  var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
+  attemptToSetRoles(msg);
+  db.collection('servers').doc(msg.guild.id).update({
+    team : {
+      discordChannelID : msg.guild.id, 
+      schedulers: [msg.author.tag], 
+      name: teamName, 
+      OPGG: OPGG, 
+      schedule : [],
+    },
+    schedulingChannelID : msg.channel.id,
+  })
+  .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```"))
+  console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
+}
+
+// Takes user input, formats into a scrim, gets confirmation before sending to collegiate channel.
+function post(msg, args){
+  var month = args[1];
       var day = args[2];
       var time = args[3];
       var AMPM = args[4];
@@ -261,9 +383,11 @@ client.on('message', async msg => {
         var formattedListing = Scrim.formatIntoConfirmationString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG)
         getPostingConfirmation(msg, formattedListing, data, timeValue);
       })
-        break
-      case 'schedule':
-        db.collection('servers').doc(msg.guild.id).get()
+}
+
+
+function printSchedule(msg){
+  db.collection('servers').doc(msg.guild.id).get()
         .then(doc=> {
           let data = doc.data();
           if (data.team.schedule.length == 0){
@@ -271,89 +395,15 @@ client.on('message', async msg => {
             return;
           }
           Team.printSchedule(data, msg, data.schedulingChannelID)
-        }
-        )
-        break;
-      case 'remove':
-        var validInput = /remove[\s]+[\d]+/
-        if(!msg.content.match(validInput)){
-            msg.reply("The input was invalid. The correct format is !post <Month> <Day> <Time> <AM/PM>\n**ex. !post May 20 5:00 PM**");
-            return
-        }
-        if (await isAScheduler(msg)) {
-          var indexToRemove = msg.content.split(" ")[1]
-          removeScrimByIndex(msg, indexToRemove)
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-      case 'clear':
-        if (await isAScheduler(msg)) {
-          wipeTeamsSchedule(msg)
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-      case 'makeMeAScheduler':
-        if (await isAScheduler(msg)) {
-          addAScheduler(msg)
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-      case 'removeScheduler':
-        var validInput = /removeScheduler[\s].+#[\d]{4}/
-        if(!msg.content.match(validInput)){
-          msg.reply("The input was invalid. The correct format is !removeAScheduler <tag> **ex. !removeScheduler chriss#8261**");
-          return;
-        }
-        if (await isAScheduler(msg)) {
-          removeAScheduler(msg)
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-      case 'changeOPGG':
-        var validInput = /changeOPGG[\s]+(https:\/\/na.op.gg\/[\S]+)/
-        if(!msg.content.match(validInput)){
-          msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeOPGG https://na.op.gg/multi/query=wisperance%2Cbasu%2Csssssss**");
-          return;
-        }
-        if(await isAScheduler(msg)){
-          var newOPGG = msg.content.split(" ")[1]
-          Team.changeOPGG(msg.guild.id, newOPGG, db)
-          msg.reply("```OPGG changed to " + newOPGG  + ".```")
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-      case 'changeName':
-        var validInput = /changeName[\s].+/
-        if(!msg.content.match(validInput)){
-          msg.reply("The input was invalid. The correct format is !changeOPGG **ex. !changeName Stony Brook Esports**");
-          return;
-        }
-        if(await isAScheduler(msg)){
-          var newName = msg.content.replace("!changeName ", "");
-          Team.changeName(msg.guild.id, newName, db)
-          msg.reply("```Name changed to " + newName  + ".```")
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-      case 'ranked?':
-        if(Math.random()*5 + 1 > 4){
-          msg.channel.send("PAKRAT SHOULD PLAY RANKED.")
-        }else{
-          msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
-        }
-        break;
-    }
-  });
+        })
+}
 
 
 
 
+
+
+// Process for when a reaction is added
   client.on('messageReactionAdd', async (reaction, user) => {
     // When we receive a reaction we check if the reaction is partial or not
     if (reaction.partial) {
@@ -367,7 +417,7 @@ client.on('message', async msg => {
       }
     }
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
-      if (reaction.emoji.name == INTERESTEMOJI){
+      if (reaction.emoji.name == INTEREST_EMOJI){
         console.log(`${user.tag} reacted to a listing.`)
         var awayServerID = await findAssociatedTeam(user.tag)
         if (awayServerID == "NOT FOUND"){
@@ -403,7 +453,7 @@ client.on('message', async msg => {
   });
 
 
-
+// When a reactor shows interest in a scrim listing
 async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
   var awaySchedulingChannelID = await findSchedulingChannel(awayServerID);
   var homeSchedulingChannelID = await findSchedulingChannel(homeServerID);
@@ -412,24 +462,23 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
   var awayServerChannel = client.guilds.cache.get(awayServerID).channels.cache.get(awaySchedulingChannelID)
   var homeServerChannel = client.guilds.cache.get(homeServerID).channels.cache.get(homeSchedulingChannelID)
   homeServerChannel.send(
-    "__**Scrim inquiry regarding the listing for " + timeOfScrim + ". React " + ACCEPTEMOJI + " to accept or " + DECLINEEMOJI + " to decline.**__\n" + 
+    "__**Scrim inquiry regarding the listing for " + timeOfScrim + ". React " + ACCEPT_EMOJI + " to accept or " + DECLINE_EMOJI + " to decline.**__\n" + 
     Team.teamAsString(awayTeamData.name, awayTeamData.team.schedulers, awayTeamData.team.OPGG)).then(async sentMsg=>{
       var filter = (reaction, user) => {
-        return [ACCEPTEMOJI, DECLINEEMOJI].includes(reaction.emoji.name) && user.id != BOTID && isAScheduler2(awayServerID, user.id) ;
+        return [ACCEPT_EMOJI, DECLINE_EMOJI].includes(reaction.emoji.name) && user.id != BOTID && isAScheduler2(awayServerID, user.id) ;
       };
-      await sentMsg.react(ACCEPTEMOJI)
-      await sentMsg.react(DECLINEEMOJI)
+      await sentMsg.react(ACCEPT_EMOJI)
+      await sentMsg.react(DECLINE_EMOJI)
       sentMsg.awaitReactions(filter, {max: 1, time: 60000, errors: ['time']})
       .then(collected => {
         const reaction = collected.first();
-        if (reaction.emoji.name === ACCEPTEMOJI) {
+        if (reaction.emoji.name === ACCEPT_EMOJI) {
           // Accept offer, change pending status, add the away team, add to away team's schedule
-          console.log("YEEEEEEEEEEEEEEET")
           var indexOfScrim = findScrimIndexByTime(homeTeamData.team.schedule, timeOfScrim);
+          console.log(indexOfScrim);
           if (indexOfScrim == -1){
             return;
           }
-          console.log("REEEEEEEEEEEEEEEEEEEEEEE")
           var scrim = homeTeamData.team.schedule[indexOfScrim]
           scrim.awayTeam = awayTeamData.team.name
           scrim.awayTeamOPGG = awayTeamData.team.OPGG
@@ -454,6 +503,7 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
   })
 }
 
+// Finds a servers scheduling channel, given their serverid (document in the Firestore)
 async function findSchedulingChannel(serverid){
   console.log(`Looking for scheduling channel associated with ${serverid}`)
   return new Promise(function(resolve, reject) {
@@ -478,6 +528,8 @@ async function getTeamData(serverid){
   )});
 }
 
+
+// Finds a scrim by time
 function findScrimIndexByTime(schedule, time){
   console.log(`Looking for a scrim for ${time}`)
   // Convert time to moment.js value
@@ -486,12 +538,15 @@ function findScrimIndexByTime(schedule, time){
   var dateValue = date.valueOf()
   for (var i=0;i<schedule.length;i++){
     if (schedule[i].time == dateValue){
+      console.log("Scrim index returning " + i)
       return i;
     }
   }
   return -1;
 }
 
+// Given the tag of a user, search for if they are listed as a scheduler in any channel.
+// Currently if a user is in multiple channels, it will return the first one.
 async function findAssociatedTeam(schedulerTag){
     console.log(`Looking for teams associated with ${schedulerTag}`)
     return new Promise(function(resolve, reject) {
@@ -518,6 +573,8 @@ async function isAScheduler(msg){
     return 0;
   }
 }
+
+// Checks if a user is a scheduler given a serverid and userid
 async function isAScheduler2(serverid, userid){
   var member = client.guilds.cache.get(serverid).members.fetch(userid);
   if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
@@ -529,6 +586,7 @@ async function isAScheduler2(serverid, userid){
   }
 }
 
+// Removes a scrim by index
 function removeScrimByIndex(msg, index){
   db.collection('servers').doc(msg.guild.id).get()
   .then(doc=> {
@@ -547,13 +605,14 @@ function removeScrimByIndex(msg, index){
     .update({
       team : team
     }).catch(error => console.log(error))
-    client.guilds.cache.get(collegiateServerID).channels.cache.get(collegiateSchedulingChannelID).messages.fetch(scrim.msgID).then(message => message.delete())
+    client.guilds.cache.get(COLLEGIATE_SERVER_ID).channels.cache.get(COLLEGIATE_SCHEDULING_CHANNELID).messages.fetch(scrim.msgID).then(message => message.delete())
     msg.reply("```" + ` Pending scrim cancelled. `+"```")
 }).catch(error =>
   console.log(error)
 )
 }
 
+// Clears the entire teams schedule
 function wipeTeamsSchedule(msg){
     db.collection('servers').doc(msg.guild.id).get()
       .then(doc=> {
@@ -568,8 +627,10 @@ function wipeTeamsSchedule(msg){
     }).catch(error =>
       console.log(error)
     )
-  }
+}
 
+
+// Once a scrim is accepted and confirmed, this function is called to add it to the other team's schedule.
 function addAcceptedScrimToSchedule(serverid, scrim){
   console.log("ADD ACCEPTED CALLED.")
   db.collection('servers').doc(serverid).get()
@@ -586,6 +647,8 @@ function addAcceptedScrimToSchedule(serverid, scrim){
 )
 }
 
+// This function is called when a scrim is initially made. It fills in as much information as it can, the rest
+// comes once the scrim is confirmed.
 function addNewScrimToSchedule(msg, data, timeValue, sentMsgID){
     data.team.schedule.push({
       time : timeValue,
@@ -606,24 +669,26 @@ function addNewScrimToSchedule(msg, data, timeValue, sentMsgID){
     console.log(`Added a new scrim to ${data.name}'s schedule`)
 }
 
+
+// Waits for confirmation for a scrim posting before sending it.
 function getPostingConfirmation(msg, formattedListing, data, timeValue){
   var filter = (reaction, user) => {
-    return [CONFIRMEMOJI, CANCELEMOJI].includes(reaction.emoji.name) && user.id != BOTID && user.id === msg.author.id;
+    return [CONFIRM_EMOJI, CANCEL_EMOJI].includes(reaction.emoji.name) && user.id != BOTID && user.id === msg.author.id;
   };
   msg.channel.send("__Does this look good?__ \n"+ formattedListing)
         .then(async sentMsg=>{
-            await sentMsg.react(CONFIRMEMOJI)
-            await sentMsg.react(CANCELEMOJI)
+            await sentMsg.react(CONFIRM_EMOJI)
+            await sentMsg.react(CANCEL_EMOJI)
             sentMsg.awaitReactions(filter, {max: 1, time: 60000, errors: ['time']})
             .then(collected => {
               const reaction = collected.first();
-              if (reaction.emoji.name === CONFIRMEMOJI) {
+              if (reaction.emoji.name === CONFIRM_EMOJI) {
                 msg.reply('``` Listing posted to the Collegiate scheduling channel. ```');
-                client.guilds.cache.get(collegiateServerID).channels.cache
-                .get(collegiateSchedulingChannelID)
-                .send(`__New Scrim Listing. React ${INTERESTEMOJI} to send a request.__ \n` + formattedListing)
+                client.guilds.cache.get(COLLEGIATE_SERVER_ID).channels.cache
+                .get(COLLEGIATE_SCHEDULING_CHANNELID)
+                .send(`__New Scrim Listing. React ${INTEREST_EMOJI} to send a request.__ \n` + formattedListing)
                 .then(async sentMsg=>{
-                  await sentMsg.react(INTERESTEMOJI);
+                  await sentMsg.react(INTEREST_EMOJI);
                   reaction.message.delete();
                   addNewScrimToSchedule(msg, data, timeValue, sentMsg.id)
                 })
@@ -659,6 +724,7 @@ function addAScheduler(msg){
    )
 }
 
+// Removes a scheduler from the servers listing given their tag. The user calling this role must have the scheduler tag.
 function removeAScheduler(msg){
   db.collection('servers').doc(msg.guild.id).get()
   .then(doc=> {
@@ -682,6 +748,7 @@ function removeAScheduler(msg){
   )
 }
 
+// Attempts to look for "Scheduler" and "Player" roles which should have been created when the bot entered the server.
 function attemptToSetRoles(msg){
   var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
   var playerRole = msg.guild.roles.cache.find(role => role.name === "Player")
