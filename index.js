@@ -169,12 +169,8 @@ client.on('message', async msg => {
           somethingWrong = 1;
         })
         break;
-    case 'test' :
-        if(checkForDefaultFields(msg) == -1){
-          console.log("An uninitialized user attempted to use a command!");
-          return;
-        }
-        findAssociatedTeam(msg.author.tag)
+    case 'ping' :
+        msg.reply("Pong!")
         break;
     case 'registerTeam':
         var validInput = /registerTeam[\s]+"[\S\s]+"[\s]+(https:\/\/na.op.gg\/[\S]+)/
@@ -270,6 +266,10 @@ client.on('message', async msg => {
         db.collection('servers').doc(msg.guild.id).get()
         .then(doc=> {
           let data = doc.data();
+          if (data.team.schedule.length == 0){
+            msg.reply("You currently have no scrims scheduled.")
+            return;
+          }
           Team.printSchedule(data, msg, data.schedulingChannelID)
         }
         )
@@ -384,15 +384,16 @@ client.on('message', async msg => {
           // with a more clever idea. Should also just make it go through all the managers if one isn't found.
           // This is a secondary concern.
           indexOfStart = content.indexOf("**Schedulers**: ")
-          var firstListedSchedulerTag = content.substring(indexOfStart + 16, content.indexOf(","))
+          var firstListedSchedulerTag = content.substring(indexOfStart + 16, content.indexOf("#")+5)
           var homeServerID = await findAssociatedTeam(firstListedSchedulerTag)
           if (homeServerID == "NOT FOUND"){
             return;
           }
-          // if (awayServerID == homeServerID){
-          //   user.send("You reacted to your own server's listing. I ignored you sorry uwu")
-          //   return;
-          // }
+          // Don't let users react to their own posts.
+          if (awayServerID == homeServerID){
+             user.send("You reacted to your own server's listing. I ignored you sorry uwu")
+             return;
+          }
           console.log(`${firstListedSchedulerTag} belongs to ${client.guilds.cache.get(homeServerID).name}`)
           showInterest(reaction, awayServerID, homeServerID, timeOfScrim)
         }
@@ -422,20 +423,28 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
       .then(collected => {
         const reaction = collected.first();
         if (reaction.emoji.name === ACCEPTEMOJI) {
-          homeServerChannel.send("```" + `Accepted offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
           // Accept offer, change pending status, add the away team, add to away team's schedule
+          console.log("YEEEEEEEEEEEEEEET")
           var indexOfScrim = findScrimIndexByTime(homeTeamData.team.schedule, timeOfScrim);
+          if (indexOfScrim == -1){
+            return;
+          }
+          console.log("REEEEEEEEEEEEEEEEEEEEEEE")
           var scrim = homeTeamData.team.schedule[indexOfScrim]
           scrim.awayTeam = awayTeamData.team.name
           scrim.awayTeamOPGG = awayTeamData.team.OPGG
           scrim.awayTeamSchedulers = awayTeamData.team.schedulers
           scrim.pending = false
           addAcceptedScrimToSchedule(awayServerID, scrim);
-          awayServerChannel.send("```" + `${homeTeamData.name} accepted your offer for ${timeOfScrim}`+"```")
+          reaction.message.delete();
+          homeServerChannel.send("```" + `Accepted offer from ${awayTeamData.team.name} for ${timeOfScrim}`+"```")
+          awayServerChannel.send("```" + `${homeTeamData.team.name} accepted your offer for ${timeOfScrim}`+"```")
           // Reaction A is the original scrim listing in the collegiate server.
+          console.log("Deleting the original message.")
           reactionA.message.delete();
         } else {
-          homeServerChannel.send("```" + `Declined offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
+          reaction.message.delete();
+          homeServerChannel.send("```" + `Declined offer from ${awayTeamData.team.name} for ${timeOfScrim}`+"```")
           // Decline offer, notify away team.
           awayServerChannel.send("```" + `${homeTeamData.name} declined your offer for ${timeOfScrim}`+"```")
         }
@@ -446,7 +455,7 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
 }
 
 async function findSchedulingChannel(serverid){
-  console.log(`Looking for teams associated with ${serverid}`)
+  console.log(`Looking for scheduling channel associated with ${serverid}`)
   return new Promise(function(resolve, reject) {
     db.collection('servers').doc(serverid)
   .get()
@@ -526,6 +535,9 @@ function removeScrimByIndex(msg, index){
     let data = doc.data()
     var team = data.team
     team.schedule.sort(Team.scrimComparator);
+    if (index >= team.schedule.length){
+      msg.reply("Out of bounds index given.")
+    }
     if (team.schedule[index].pending == false){
       msg.reply("This scrim is already confirmed. You must contact the opposing team if you wish to cancel.")
       return;
@@ -534,7 +546,7 @@ function removeScrimByIndex(msg, index){
     db.collection('servers').doc(msg.guild.id)
     .update({
       team : team
-    })
+    }).catch(error => console.log(error))
     client.guilds.cache.get(collegiateServerID).channels.cache.get(collegiateSchedulingChannelID).messages.fetch(scrim.msgID).then(message => message.delete())
     msg.reply("```" + ` Pending scrim cancelled. `+"```")
 }).catch(error =>
@@ -559,6 +571,7 @@ function wipeTeamsSchedule(msg){
   }
 
 function addAcceptedScrimToSchedule(serverid, scrim){
+  console.log("ADD ACCEPTED CALLED.")
   db.collection('servers').doc(serverid).get()
   .then(doc=> {
     let data = doc.data()
@@ -608,13 +621,15 @@ function getPostingConfirmation(msg, formattedListing, data, timeValue){
                 msg.reply('``` Listing posted to the Collegiate scheduling channel. ```');
                 client.guilds.cache.get(collegiateServerID).channels.cache
                 .get(collegiateSchedulingChannelID)
-                .send("__New Scrim Listing__ \n" + formattedListing)
+                .send(`__New Scrim Listing. React ${INTERESTEMOJI} to send a request.__ \n` + formattedListing)
                 .then(async sentMsg=>{
                   await sentMsg.react(INTERESTEMOJI);
+                  reaction.message.delete();
                   addNewScrimToSchedule(msg, data, timeValue, sentMsg.id)
                 })
               } else {
-                msg.reply('```Canceled this listing```.');
+                reaction.message.delete();
+                msg.reply('```Canceled this listing```');
               }
             }).catch(collected => {
               console.log(collected)
