@@ -15,7 +15,7 @@ const Scrim = require('./classes/Scrim')
 
 // Require Discord
 const Discord = require('discord.js');
-const client = new Discord.Client();
+const client = new Discord.Client({partials: ['MESSAGE', 'CHANNEL', 'REACTION']});
 const PREFIX = "!"
 
 // For usage in moment.js
@@ -48,6 +48,12 @@ const MONTHS = {
 // COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
 const collegiateServerID = "713578165511127132"
 const collegiateSchedulingChannelID = "713866406705233952"
+const BOTID = "713577813159968800"
+
+
+const CONFIRMEMOJI = "👍"
+const CANCELEMOJI = "👎"
+const INTERESTEMOJI = "🤘🏼";
 
 
 client.on("guildCreate", (guild) => {
@@ -198,9 +204,6 @@ client.on('message', async msg => {
       var day = args[2];
       var time = args[3];
       var AMPM = args[4];
-
-
-      
       if (day.length == 1){
         day = "0" + day
       }
@@ -238,19 +241,9 @@ client.on('message', async msg => {
         // Push a new scrim into the local array, then update in the database.
 
         var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.manager, data.team.OPGG)
-        getConfirmation(msg,  formattedListing, data, timeValue);
+        getPostingConfirmation(msg,  formattedListing, data, timeValue);
       })
         break
-      //   msg.channel.send("__Posting this listing in the collegiate scheduling channel.__ \n" +
-      //   formattedListing)
-      //   client.guilds.cache.get(collegiateServerID)
-      //   .channels.cache.get(collegiateSchedulingChannelID).send(
-      //     "__New Scrim Listing__ \n" +
-      //     formattedListing)
-      // }
-      // ).catch(err => {
-      //   console.log("Error getting document", err);
-      // })
       case 'schedule':
         db.collection('servers').doc(msg.guild.id).get()
         .then(doc=> {
@@ -259,11 +252,58 @@ client.on('message', async msg => {
         }
         )
         break;
+      case 'clear':
+        wipeTeamsSchedule(msg);
     }
   });
 
 
+
+
+  client.on('messageReactionAdd', async (reaction, user) => {
+    // When we receive a reaction we check if the reaction is partial or not
+    if (reaction.partial) {
+      // If the message this reaction belongs to was removed the fetching might result in an API error, which we need to handle
+      try {
+        await reaction.fetch();
+      } catch (error) {
+        console.log('Something went wrong when fetching the message: ', error);
+        // Return as `reaction.message.author` may be undefined/null
+        return;
+      }
+    }
+    if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
+      if (reaction.emoji.name == "🤘🏼"){
+        console.log(`${user.tag} reacted to a listing.`)
+      }
+    }
+
+  });
+
+
+
+
+
+
+
+
+
   
+function wipeTeamsSchedule(msg){
+    db.collection('servers').doc(msg.guild.id).get()
+      .then(doc=> {
+        let data = doc.data()
+        var team = data.team
+        team.schedule = []
+        db.collection('servers').doc(msg.guild.id)
+        .update({
+          team : team
+        })
+    }).catch(error =>
+      console.log(error)
+    )
+  }
+
 
 function addScrimToSchedule(msg, data, timeValue){
     data.team.schedule.push({
@@ -274,28 +314,32 @@ function addScrimToSchedule(msg, data, timeValue){
     })
     db.collection('servers').doc(msg.guild.id).update({
       team : data.team
-    })
+    }).catch(error =>
+      console.log(error)
+    )
     console.log(`Added a new scrim to ${data.name}'s schedule`)
 }
 
-function getConfirmation(msg, formattedListing, data, timeValue){
+function getPostingConfirmation(msg, formattedListing, data, timeValue){
   const filter = (reaction, user) => {
-    return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;
+    return [CONFIRMEMOJI, CANCELEMOJI].includes(reaction.emoji.name) && user.id === msg.author.id;
   };
   msg.channel.send("__Does this look good?__ \n"+ formattedListing)
         .then(async sentMsg=>{
-            await sentMsg.react("👍")
-            await sentMsg.react("👎")
+            await sentMsg.react(CONFIRMEMOJI)
+            await sentMsg.react(CANCELEMOJI)
             sentMsg.awaitReactions(filter, {max: 1, time: 60000, errors: ['time']})
             .then(collected => {
               const reaction = collected.first();
-          
-              if (reaction.emoji.name === '👍') {
+              if (reaction.emoji.name === CONFIRMEMOJI) {
                 addScrimToSchedule(msg, data, timeValue)
                 msg.reply('``` Listing posted to the Collegiate scheduling channel. ```');
-                client.guilds.cache(collegiateServerID).channels.cache
+                client.guilds.cache.get(collegiateServerID).channels.cache
                 .get(collegiateSchedulingChannelID)
                 .send("__New Scrim Listing__ \n" + formattedListing)
+                .then(async sentMsg=>{
+                  await sentMsg.react(INTERESTEMOJI);
+                })
               } else {
                 msg.reply('```Canceled this listing```.');
               }
@@ -304,6 +348,8 @@ function getConfirmation(msg, formattedListing, data, timeValue){
             });
         })
 }
+
+
 
 function attemptToSetRoles(msg){
   var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
