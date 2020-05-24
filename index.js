@@ -160,6 +160,7 @@ client.on('message', async msg => {
           console.log("An uninitialized user attempted to use a command!");
           return;
         }
+        findAssociatedTeam(msg.author.tag)
         break;
     case 'registerTeam':
         var validInput = /registerTeam[\s]+"[\S\s]+"[\s]+(https:\/\/na.op.gg\/[\S]+)/
@@ -174,7 +175,7 @@ client.on('message', async msg => {
         db.collection('servers').doc(msg.guild.id).update({
           team : {
             discordChannelID : msg.guild.id, 
-            manager: msg.author.tag, 
+            manager: [msg.author.tag], 
             name: teamName, 
             OPGG: OPGG, 
             schedule : [],
@@ -273,8 +274,9 @@ client.on('message', async msg => {
       }
     }
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
-      if (reaction.emoji.name == "🤘🏼"){
+      if (reaction.emoji.name == INTERESTEMOJI){
         console.log(`${user.tag} reacted to a listing.`)
+        findAssociatedTeam(user.tag);
       }
     }
 
@@ -287,7 +289,19 @@ client.on('message', async msg => {
 
 
 
-
+function findAssociatedTeam(managerTag){
+  console.log(`Looking for teams associated with ${managerTag}`)
+  db.collection('servers').where("team.manager", "in", [managerTag])
+  .get()
+  .then(function(querySnapshot) {
+    querySnapshot.forEach(function(doc){
+      console.log(doc.id, " => ", doc.data());
+    });
+  })
+  .catch(error =>
+    console.log(error))
+  
+}
   
 function wipeTeamsSchedule(msg){
     db.collection('servers').doc(msg.guild.id).get()
