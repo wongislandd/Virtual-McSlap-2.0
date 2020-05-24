@@ -260,7 +260,7 @@ client.on('message', async msg => {
         var timeValue = requestedTime.valueOf();
         // Push a new scrim into the local array, then update in the database.
         var formattedListing = Scrim.formatIntoConfirmationString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG)
-        getPostingConfirmation(msg,  formattedListing, data, timeValue);
+        getPostingConfirmation(msg, formattedListing, data, timeValue);
       })
         break
       case 'schedule':
@@ -270,6 +270,19 @@ client.on('message', async msg => {
           Team.printSchedule(data, msg, data.schedulingChannelID)
         }
         )
+        break;
+      case 'remove':
+        var validInput = /remove[\s]+[\d]+/
+        if(!msg.content.match(validInput)){
+            msg.reply("The input was invalid. The correct format is !post <Month> <Day> <Time> <AM/PM>\n**ex. !post May 20 5:00 PM**");
+            return
+        }
+        if (await isAScheduler(msg)) {
+          var indexToRemove = msg.content.split(" ")[1]
+          removeScrimByIndex(msg, indexToRemove)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
         break;
       case 'clear':
         if (await isAScheduler(msg)) {
@@ -504,7 +517,28 @@ async function isAScheduler2(serverid, userid){
   }
 }
 
-  
+function removeScrimByIndex(msg, index){
+  db.collection('servers').doc(msg.guild.id).get()
+  .then(doc=> {
+    let data = doc.data()
+    var team = data.team
+    team.schedule.sort(Team.scrimComparator);
+    if (team.schedule[index].pending == false){
+      msg.reply("This scrim is already confirmed. You must contact the opposing team if you wish to cancel.")
+      return;
+    }
+    var scrim = team.schedule.splice(index, 1)[0]
+    db.collection('servers').doc(msg.guild.id)
+    .update({
+      team : team
+    })
+    client.guilds.cache.get(collegiateServerID).channels.cache.get(collegiateSchedulingChannelID).messages.fetch(scrim.msgID).then(message => message.delete())
+    msg.reply("```" + ` Pending scrim cancelled. `+"```")
+}).catch(error =>
+  console.log(error)
+)
+}
+
 function wipeTeamsSchedule(msg){
     db.collection('servers').doc(msg.guild.id).get()
       .then(doc=> {
@@ -536,7 +570,7 @@ function addAcceptedScrimToSchedule(serverid, scrim){
 )
 }
 
-function addNewScrimToSchedule(msg, data, timeValue){
+function addNewScrimToSchedule(msg, data, timeValue, sentMsgID){
     data.team.schedule.push({
       time : timeValue,
       homeTeam : data.team.name,
@@ -545,6 +579,7 @@ function addNewScrimToSchedule(msg, data, timeValue){
       awayTeam : "",
       awayTeamOPGG : "",
       awayTeamSchedulers : "",
+      msgID : sentMsgID,
       pending : true,
     })
     db.collection('servers').doc(msg.guild.id).update({
@@ -567,13 +602,13 @@ function getPostingConfirmation(msg, formattedListing, data, timeValue){
             .then(collected => {
               const reaction = collected.first();
               if (reaction.emoji.name === CONFIRMEMOJI) {
-                addNewScrimToSchedule(msg, data, timeValue)
                 msg.reply('``` Listing posted to the Collegiate scheduling channel. ```');
                 client.guilds.cache.get(collegiateServerID).channels.cache
                 .get(collegiateSchedulingChannelID)
                 .send("__New Scrim Listing__ \n" + formattedListing)
                 .then(async sentMsg=>{
                   await sentMsg.react(INTERESTEMOJI);
+                  addNewScrimToSchedule(msg, data, timeValue, sentMsg.id)
                 })
               } else {
                 msg.reply('```Canceled this listing```.');
@@ -624,7 +659,6 @@ function removeAScheduler(msg){
     }else{
       msg.reply("I couldn't find that scheduler in your list.")
     }
-
   }).catch(error =>
     console.log(error)
   )
