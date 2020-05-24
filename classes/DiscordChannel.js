@@ -6,7 +6,7 @@ class DiscordChannel{
         this.serverID = serverID
         this.schedulingChannelID = null
         this.timeZone = null
-        this.managerRoleID = managerRoleID
+        this.schedulerRoleID = schedulerRoleID
         this.team = team
     }
     // TODO

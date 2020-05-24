@@ -146,7 +146,7 @@ client.on('message', async msg => {
             str += `\n**Scheduler Role:** ${msg.guild.roles.cache.get(data.schedulerRoleID)}`
             str += `\n**Scheduling Channel:** ${msg.guild.channels.cache.get(data.schedulingChannelID)}`
             str += `\n**Team Name:** ${data.team.name}`
-            str += `\n**Team Manager:** ${data.team.manager}`
+            str += `\n**Team Schedulers:** ${data.team.schedulers}`
             str += `\n**OPGG:** ${data.team.OPGG}`
             str += ""
             msg.channel.send(str);
@@ -175,7 +175,7 @@ client.on('message', async msg => {
         db.collection('servers').doc(msg.guild.id).update({
           team : {
             discordChannelID : msg.guild.id, 
-            manager: [msg.author.tag], 
+            schedulers: [msg.author.tag], 
             name: teamName, 
             OPGG: OPGG, 
             schedule : [],
@@ -240,8 +240,7 @@ client.on('message', async msg => {
         // This is the value I want to store within Firestore
         var timeValue = requestedTime.valueOf();
         // Push a new scrim into the local array, then update in the database.
-
-        var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.manager, data.team.OPGG)
+        var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG)
         getPostingConfirmation(msg,  formattedListing, data, timeValue);
       })
         break
@@ -255,6 +254,28 @@ client.on('message', async msg => {
         break;
       case 'clear':
         wipeTeamsSchedule(msg);
+        break;
+      case 'makeMeAScheduler':
+        var member = msg.guild.members.fetch(msg.author.id);
+        if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
+          addAScheduler(msg)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
+      case 'removeAScheduler':
+        var validInput = /removeAScheduler[\s].+#[\d]{4}/
+        if(!msg.content.match(validInput)){
+          msg.reply("The input was invalid. The correct format is !removeAScheduler <tag> **ex. !removeAScheduler chriss#8261**");
+          return;
+        }
+        var member = msg.guild.members.fetch(msg.author.id);
+        if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
+          removeAScheduler(msg)
+        }else{
+          msg.reply("Only Scheduler's can call this command!");
+        }
+        break;
     }
   });
 
@@ -289,9 +310,9 @@ client.on('message', async msg => {
 
 
 
-function findAssociatedTeam(managerTag){
-  console.log(`Looking for teams associated with ${managerTag}`)
-  db.collection('servers').where("team.manager", "in", [managerTag])
+function findAssociatedTeam(schedulerTag){
+  console.log(`Looking for teams associated with ${schedulerTag}`)
+  db.collection('servers').where("team.schedulers", "in", [schedulerTag])
   .get()
   .then(function(querySnapshot) {
     querySnapshot.forEach(function(doc){
@@ -363,7 +384,51 @@ function getPostingConfirmation(msg, formattedListing, data, timeValue){
         })
 }
 
+// Makes the one who called this function a scheduler. They should have the scheduler tag first.
+function addAScheduler(msg){
+  db.collection('servers').doc(msg.guild.id).get()
+      .then(doc=> {
+        let data = doc.data()
+        var team = data.team
+        // Only add if they are already on
+        if (team.schedulers.indexOf(msg.author.tag) === -1){
+          team.schedulers.push(msg.author.tag)
+          db.collection('servers').doc(msg.guild.id)
+          .update({
+            team : team
+          })
+          msg.reply("```" + msg.author.tag + " added as a scheduler for " + team.name + "```")
+        }else{
+          msg.reply("That scheduler already exists!")
+        }
+    }).catch(error =>
+      console.log(error)
+   )
+}
 
+function removeAScheduler(msg){
+  db.collection('servers').doc(msg.guild.id).get()
+  .then(doc=> {
+    let data = doc.data()
+    var team = data.team
+    var schedulerToRemove = msg.content.replace("!removeAScheduler ", "");
+    console.log(`Scheduler to remove is ${schedulerToRemove}`)
+    // Remove if it exists
+    if (team.schedulers.indexOf(schedulerToRemove) != -1){
+      team.schedulers.splice(team.schedulers.indexOf(schedulerToRemove));
+      db.collection('servers').doc(msg.guild.id)
+      .update({
+        team : team
+      })
+      msg.reply("```" + msg.author.tag + " removed as a scheduler from " + team.name + "```")
+    }else{
+      msg.reply("I couldn't find that scheduler in your list.")
+    }
+
+  }).catch(error =>
+    console.log(error)
+  )
+}
 
 function attemptToSetRoles(msg){
   var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
@@ -400,7 +465,7 @@ function checkForDefaultFields(msg){
       somethingWrong++
     }
     if (data.schedulerRoleID == -1){
-      str += "\n- Manager role. "
+      str += "\n- Scheduler role. "
       somethingWrong++
     }
     if (data.timeZone == ''){

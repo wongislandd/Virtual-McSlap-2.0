@@ -9,9 +9,9 @@ const TIMEZONES = {
 }
 
 class Team{
-    constructor(discordChannel, manager, playerRoleID, name, OPGG, scrimSchedule){
+    constructor(discordChannel, schedulers, playerRoleID, name, OPGG, scrimSchedule){
         this.discordChannelID = discordChannel
-        this.manager = manager
+        this.schedulers = schedulers
         this.playerRoleID = playerRoleID
         this.name = name
         this.OPGG = OPGG
@@ -28,7 +28,7 @@ class Team{
             console.log(scrim)
             if (scrim.pending == true){
                 var time = moment.tz(scrim.time, TIMEZONES[data.timeZone])
-                channel.send(`**[${i}]**\n`+Scrim.formatIntoPendingString(time, TIMEZONES[data.timeZone], scrim.homeTeam, data.team.manager, data.team.OPGG))
+                channel.send(`**[${i}]**\n`+Scrim.formatIntoPendingString(time, TIMEZONES[data.timeZone], scrim.homeTeam, data.team.schedulers, data.team.OPGG))
             }
         }
     }
