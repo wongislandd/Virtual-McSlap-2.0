@@ -50,8 +50,8 @@ const MONTHS = {
 
 
 // COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
-const COLLEGIATE_SERVER_ID = "713578165511127132"
-const COLLEGIATE_SCHEDULING_CHANNELID = "713866406705233952"
+const COLLEGIATE_SERVER_ID = "456586399710314529"
+const COLLEGIATE_SCHEDULING_CHANNELID = "714185153299218522"
 const BOTID = "713577813159968800"
 
 const ACCEPT_EMOJI = "🟢"
@@ -143,8 +143,8 @@ client.on('message', async msg => {
         }
         registerTeam(msg);
         break;
-    case 'setTimeZone':
-      var validInput = /setTimeZone[\s]+(Eastern|Pacific|Mountain|Central)/
+    case 'setTimezone':
+      var validInput = /setTimezone[\s]+(Eastern|Pacific|Mountain|Central)/
       if(!msg.content.match(validInput)){
         msg.reply("The input was invalid. The correct format is !setTimeZone <Eastern/Pacific/Mountain/Central> \n**ex. !setTimeZone Eastern**");
         return
@@ -187,15 +187,15 @@ client.on('message', async msg => {
         }
         printSchedule(msg);
         break;
-    case 'remove':
-        var validInput = /remove[\s]+[\d]+/
+    case 'cancel':
+        var validInput = /cancel[\s]+[\d]+/
         if(!msg.content.match(validInput)){
             msg.reply("The input was invalid. The correct format is !post <Month> <Day> <Time> <AM/PM>\n**ex. !post May 20 5:00 PM**");
             return
         }
         if (await isAScheduler(msg)) {
           var indexToRemove = msg.content.split(" ")[1]
-          removeScrimByIndex(msg, indexToRemove)
+          cancelScrimByIndex(msg, indexToRemove)
         }else{
           msg.reply("Only Scheduler's can call this command!");
         }
@@ -267,9 +267,7 @@ client.on('message', async msg => {
         break;
     case 'clear':
         if(msg.author.id == CHRIS){
-          msg.delete();
-          var contentToSend = msg.content.replace("!echo ", "")
-          msg.channel.send(contentToSend)
+          wipeTeamsSchedule(msg)
         }
         break;
     case 'checkNow':
@@ -305,11 +303,12 @@ function botDescription(){
                       "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
     "!post" : "Prepare to post a new scrim listing. The correct format is !post <Month> <Day> <Time> <AM/PM>",
     "!remove" : "Removes a **pending** scrim from your teams schedule by index. The correct format is !remove <index>",
-    "!setTimeZone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
+    "!setTimezone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
     "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
     "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
     "!makeMeAScheduler" : "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
-    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeScheduler <tag>"
+    "!removeScheduler" : "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeScheduler <tag>",
+    //"!setAverageRank" : "Sets the listed average rank of your team. The correct format is !setAverageRank <rank>"
 }
 // My note
   strToReturn = "*Note from the creator: \nThis bot was created by Chris (chriss#8261). Virtual McSlap 2.0 is named after my team's manager McSlap. This bot is meant to ease the role of a team's manager by automating "+
@@ -642,7 +641,7 @@ async function isAScheduler2(serverid, userid){
 }
 
 // Removes a scrim by index
-async function removeScrimByIndex(msg, index){
+async function cancelScrimByIndex(msg, index){
   db.collection('servers').doc(msg.guild.id).get()
   .then(doc=> {
     let data = doc.data()
@@ -901,7 +900,7 @@ function checkForDefaultFields(msg){
       somethingWrong++
     }
     if (!data.team.avgRank){
-      str += "\n- Average rank."
+      str += "\n- Average rank. Use !setAverageRank <rank> to define it."
       somethingWrong++
     }
     if(somethingWrong != 0)
@@ -919,6 +918,7 @@ function checkForDefaultFields(msg){
 // Process for when the bot turns on.
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  client.user.setActivity('use !info to see my commands');
 });
 
 // Check interval is in minutes
@@ -965,7 +965,7 @@ async function checkNow(){
         schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
           "\n*The scrim is happening in the next 30 minutes. Get ready!*")
       }
-      else if(timeUntilScrim < 360000 && timeUntilScrim > 2700000){ // 45 - 60 min
+      else if(timeUntilScrim < 360000 && timeUntilScrim > 2700000){ // 45-60 min
         schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
           "\n*The scrim is happening within an hour.*")
       }
