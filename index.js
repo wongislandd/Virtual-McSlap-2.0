@@ -65,25 +65,6 @@ const CHRIS = 110128099361849344
 // Process for when the bot joins a new server
 client.on("guildCreate", (guild) => {
   console.log(`Adding ${guild.id} (${guild.name}) to the database.`)
-    if(guild.roles.cache.find(role => role.name === "Scheduler") == null){ // sets the scheduler role to the custom created one by ID
-        guild.roles.create({
-        data:{
-            name: 'Scheduler',
-            color: 'BLUE',
-        }
-        })
-        .then(role => console.log(`Created new role with name ${role.name} and color ${role.color}`))
-        .catch(console.error);
-    }
-    if(guild.roles.cache.find(role => role.name === "Player") == null){
-        guild.roles.create({
-        data:{
-            name: 'Player',
-            color: 'RED'
-        }
-        }).then(role => console.log(`Created new role with name ${role.name} and color ${role.color}`))
-        .catch(console.error);
-    }
   var guildData = {
     name : guild.name,
     schedulingChannelID : -1,
@@ -302,7 +283,7 @@ function botDescription(){
                       "This will fulfill most of the setup (aside from Timezone) for your server. The channel this message was sent in will become the scheduling channel. "+
                       "The bot will look for the Player and Scheduler role and the team will be set with a blank schedule.",
     "!post" : "Prepare to post a new scrim listing. The correct format is !post <Month> <Day> <Time> <AM/PM>",
-    "!remove" : "Removes a **pending** scrim from your teams schedule by index. The correct format is !remove <index>",
+    "!cancel" : "Removes a **pending** scrim from your teams schedule by index. The correct format is !cancel <index>",
     "!setTimezone" : "Sets the desired time zone. The correct format is !setTimeZone <Eastern/Pacific/Central/Mountain>",
     "!changeOPGG" : "Changes the team's OPGG link. The correct format is !changeOPGG <opgg>",
     "!changeName" : "Changes the team's name. The correct format is !changeName <name>",
@@ -363,25 +344,59 @@ function showServerSettings(msg){
 }
 
 // Registers a team in the firestore
-function registerTeam(msg){
-  var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
-  var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
-  attemptToSetRoles(msg);
-  db.collection('servers').doc(msg.guild.id).update({
-    team : {
-      schedulers: [msg.author.tag], 
-      name: teamName, 
-      discordChannelID : msg.guild.id,
-      avgRank : "",
-      OPGG: OPGG, 
-      schedule : [],
-    },
-    schedulingChannelID : msg.channel.id,
-  })
-  .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```"))
-  console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
+  async function registerTeam(msg){
+    var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
+    var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
+    var roleIDs = await createRolesForNewTeam(msg.guild.id, teamName)
+    db.collection('servers').doc(msg.guild.id).update({
+      team : {
+        schedulers: [msg.author.tag],
+        schedulerRoleID : roleIDs[0],
+        playerRoleID : roleIDs[1],
+        schedulingChannelID : msg.channel.id,
+        name: teamName, 
+        discordChannelID : msg.guild.id,
+        avgRank : "",
+        OPGG: OPGG, 
+        schedule : [],
+      }
+    })
+    .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```"))
+    console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
 }
 
+
+// Roles created first index is Scheduler role id, Second index is Player role id
+async function createRolesForNewTeam(serverid, teamName){
+  var guild = client.guilds.cache.get(serverid)
+  var rolesCreated = []
+  if(guild.roles.cache.find(role => role.name === `${teamName} Scheduler`) == null){ // sets the scheduler role to the custom created one by ID
+    guild.roles.create({
+    data:{
+        name: `${teamName} Scheduler`,
+        color: 'BLUE',
+    }
+    })
+    .then(role => {
+      console.log(`Created new role with name ${role.name} and color ${role.color}`)
+      rolesCreated.push(role.id)
+    })
+    .catch(console.error);
+  }
+  if(guild.roles.cache.find(role => role.name === `${teamName} Player`) == null){ // sets the scheduler role to the custom created one by ID
+    guild.roles.create({
+    data:{
+        name: `${teamName} Player`,
+        color: 'Red',
+    }
+    })
+    .then(role => {
+    console.log(`Created new role with name ${role.name} and color ${role.color}`),
+    rolesCreated.push(role.id)})
+    .catch(console.error);
+  }
+  return rolesCreated;
+}
 // Takes user input, formats into a scrim, gets confirmation before sending to collegiate channel.
 function post(msg, args){
   var month = args[1];
@@ -852,25 +867,7 @@ function removeAScheduler(msg){
   )
 }
 
-// Attempts to look for "Scheduler" and "Player" roles which should have been created when the bot entered the server.
-function attemptToSetRoles(msg){
-  var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
-  var playerRole = msg.guild.roles.cache.find(role => role.name === "Player")
-  if (schedulerRole == null){
-    msg.reply("I tried to setup the Scheduler role as your primary scheduling role but I couldn't find it. \n Please create a role named Scheduler for me to use.")
-  }else{
-    db.collection('servers').doc(msg.guild.id).update({
-      schedulerRoleID : schedulerRole.id
-    })
-  }
-  if (playerRole == null){
-    msg.reply("I tried to setup the Player role as your primary player role but I couldn't find it. \n Please create a role named Player for me to use.")
-  }else{
-    db.collection('servers').doc(msg.guild.id).update({
-      playerRoleID : playerRole.id
-    })
-  }
-}
+
 // Checks if anything is uninitialized within the database. Returns -1 if so, and 0 if everything is all good.
 function checkForDefaultFields(msg){
   var somethingWrong = 0;
