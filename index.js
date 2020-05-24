@@ -325,8 +325,12 @@ client.on('message', async msg => {
           msg.reply("Only Scheduler's can call this command!");
         }
         break;
-      case 'makeMattStop':
-        msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
+      case 'ranked?':
+        if(Math.random()*5 + 1 > 4){
+          msg.channel.send("PAKRAT SHOULD PLAY RANKED.")
+        }else{
+          msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
+        }
         break;
     }
   });
@@ -374,7 +378,7 @@ client.on('message', async msg => {
           //   return;
           // }
           console.log(`${firstListedSchedulerTag} belongs to ${client.guilds.cache.get(homeServerID).name}`)
-          showInterest(awayServerID, homeServerID, timeOfScrim)
+          showInterest(reaction, awayServerID, homeServerID, timeOfScrim)
         }
       }
     }
@@ -383,7 +387,7 @@ client.on('message', async msg => {
 
 
 
-async function showInterest(awayServerID, homeServerID, timeOfScrim){
+async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
   var awaySchedulingChannelID = await findSchedulingChannel(awayServerID);
   var homeSchedulingChannelID = await findSchedulingChannel(homeServerID);
   var awayTeamData = await getTeamData(awayServerID);
@@ -403,8 +407,19 @@ async function showInterest(awayServerID, homeServerID, timeOfScrim){
         const reaction = collected.first();
         if (reaction.emoji.name === ACCEPTEMOJI) {
           homeServerChannel.send("```" + `Accepted offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
+          // Accept offer, change pending status, add the away team, add to away team's schedule
+          var indexOfScrim = findScrimIndexByTime(homeTeamData.team.schedule, timeOfScrim);
+          var scrim = homeTeamData.team.schedule[indexOfScrim]
+          scrim.awayTeam = awayTeamData.team.name
+          scrim.pending = false
+          addAcceptedScrimToSchedule(awayServerID, scrim);
+          awayServerChannel.send("```" + `${homeTeamData.name} accepted your offer for ${timeOfScrim}`+"```")
+          // Reaction A is the original scrim listing in the collegiate server.
+          reactionA.message.delete();
         } else {
           homeServerChannel.send("```" + `Declined offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
+          // Decline offer, notify away team.
+          awayServerChannel.send("```" + `${homeTeamData.name} declined your offer for ${timeOfScrim}`+"```")
         }
       }).catch(collected => {
         console.log(collected)
@@ -436,6 +451,19 @@ async function getTeamData(serverid){
   )});
 }
 
+function findScrimIndexByTime(schedule, time){
+  console.log(`Looking for a scrim for ${time}`)
+  // Convert time to moment.js value
+  time = time.replace(/st|nd|th/, "")
+  var date = new Date(time);
+  var dateValue = date.valueOf()
+  for (var i=0;i<schedule.length;i++){
+    if (schedule[i].time == dateValue){
+      return i;
+    }
+  }
+  return -1;
+}
 
 async function findAssociatedTeam(schedulerTag){
     console.log(`Looking for teams associated with ${schedulerTag}`)
@@ -474,8 +502,6 @@ async function isAScheduler2(serverid, userid){
   }
 }
 
-
-
   
 function wipeTeamsSchedule(msg){
     db.collection('servers').doc(msg.guild.id).get()
@@ -493,8 +519,22 @@ function wipeTeamsSchedule(msg){
     )
   }
 
+function addAcceptedScrimToSchedule(serverid, scrim){
+  db.collection('servers').doc(serverid).get()
+  .then(doc=> {
+    let data = doc.data()
+    var team = data.team
+    team.schedule.push(scrim)
+    db.collection('servers').doc(serverid)
+    .update({
+      team : team
+    })
+}).catch(error =>
+  console.log(error)
+)
+}
 
-function addScrimToSchedule(msg, data, timeValue){
+function addNewScrimToSchedule(msg, data, timeValue){
     data.team.schedule.push({
       time : timeValue,
       homeTeam : data.team.name,
@@ -521,7 +561,7 @@ function getPostingConfirmation(msg, formattedListing, data, timeValue){
             .then(collected => {
               const reaction = collected.first();
               if (reaction.emoji.name === CONFIRMEMOJI) {
-                addScrimToSchedule(msg, data, timeValue)
+                addNewScrimToSchedule(msg, data, timeValue)
                 msg.reply('``` Listing posted to the Collegiate scheduling channel. ```');
                 client.guilds.cache.get(collegiateServerID).channels.cache
                 .get(collegiateSchedulingChannelID)
