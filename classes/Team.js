@@ -24,10 +24,12 @@ class Team{
         var scrim = {}
         for (var i=0;i<schedule.length;i++){
             scrim = schedule[i]
-            console.log(scrim)
+            var time = moment.tz(scrim.time, TIMEZONES[data.timeZone])
             if (scrim.pending == true){
-                var time = moment.tz(scrim.time, TIMEZONES[data.timeZone])
-                channel.send(`**[${i}]**\n`+Scrim.formatIntoPendingString(time, TIMEZONES[data.timeZone], scrim.homeTeam, data.team.schedulers, data.team.OPGG))
+                // Don't print pending ones.
+                channel.send("```" + `[${i}] PENDING`+ "```"+Scrim.formatIntoPendingString(time, TIMEZONES[data.timeZone]))
+            }else{
+                channel.send("```" + `[${i}] CONFIRMED`+ "```" + Scrim.formatIntoConfirmedString(data.name, time, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG))
             }
         }
     }

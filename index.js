@@ -259,7 +259,7 @@ client.on('message', async msg => {
         // This is the value I want to store within Firestore
         var timeValue = requestedTime.valueOf();
         // Push a new scrim into the local array, then update in the database.
-        var formattedListing = Scrim.formatIntoPendingString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG)
+        var formattedListing = Scrim.formatIntoConfirmationString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG)
         getPostingConfirmation(msg,  formattedListing, data, timeValue);
       })
         break
@@ -411,6 +411,8 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
           var indexOfScrim = findScrimIndexByTime(homeTeamData.team.schedule, timeOfScrim);
           var scrim = homeTeamData.team.schedule[indexOfScrim]
           scrim.awayTeam = awayTeamData.team.name
+          scrim.awayTeamOPGG = awayTeamData.team.OPGG
+          scrim.awayTeamSchedulers = awayTeamData.team.schedulers
           scrim.pending = false
           addAcceptedScrimToSchedule(awayServerID, scrim);
           awayServerChannel.send("```" + `${homeTeamData.name} accepted your offer for ${timeOfScrim}`+"```")
@@ -538,7 +540,11 @@ function addNewScrimToSchedule(msg, data, timeValue){
     data.team.schedule.push({
       time : timeValue,
       homeTeam : data.team.name,
+      homeTeamOPGG : data.team.OPGG,
+      homeTeamSchedulers : data.team.schedulers,
       awayTeam : "",
+      awayTeamOPGG : "",
+      awayTeamSchedulers : "",
       pending : true,
     })
     db.collection('servers').doc(msg.guild.id).update({
