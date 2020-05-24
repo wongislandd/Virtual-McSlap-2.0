@@ -45,6 +45,12 @@ class Team{
             "team.name" : name
         })
     }
+    static changeAverageRank(serverid, rank, db){
+        console.log("Change AverageRank called.");
+        db.collection('servers').doc(serverid).update({
+            "team.avgRank" : rank
+        })
+    }
     static scrimComparator = function (a,b){
         if (a.time > b.time){
             return 1
@@ -55,9 +61,10 @@ class Team{
         return 0
     };
 
-    static teamAsString(name, schedulers, OPGG){
+    static teamAsString(name, avgRank, schedulers, OPGG){
         var str = `**Team**: ${name}` +
         `\n**Schedulers**: ${schedulers}` +
+        `\n**Avg Rank**: ${avgRank}` +
         `\n**OPGG**: ${OPGG}`
         return str;
     }

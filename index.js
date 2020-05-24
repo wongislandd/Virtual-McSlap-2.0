@@ -89,6 +89,7 @@ client.on("guildCreate", (guild) => {
     schedulingChannelID : -1,
     timeZone : "",
     schedulerRoleID : -1,
+    playerRoleID : -1,
     team : {}
   }
   db.collection('servers').doc(guild.id).set(guildData)
@@ -152,6 +153,17 @@ client.on('message', async msg => {
       DiscordChannel.changeTimezone(msg.guild.id, timeZone, db)
       msg.channel.send("```" + msg.guild.name + " time zone has been set to " + timeZone + " within the database.```")
       break;
+    case 'setAverageRank':
+      var validInput = /setAverageRank[\s].+/
+      if(!msg.content.match(validInput)){
+        msg.reply("The input was invalid. The correct format is !setAverageRank Masters");
+        return
+      }
+      // From the first space onwards
+      var rank = msg.content.substring(msg.content.indexOf(" ")+1)
+      Team.changeAverageRank(msg.guild.id, rank, db)
+      msg.channel.send("```" + `Set average rank to ${rank}` + "```")
+      break;
     case 'post':
       var validInput = /post[\s]+(January|February|March|April|May|June|July|August|September|October|November|December)\s+[\d]{1,2}\s+[\d]{1,2}[:][\d]{2}[\s]+(AM|PM|am|pm)/
       if(!msg.content.match(validInput)){
@@ -160,6 +172,10 @@ client.on('message', async msg => {
       }
       if (!await isAScheduler(msg)){
         msg.reply("Only schedulers can use this command!")
+        return;
+      }
+      if(checkForDefaultFields(msg) == -1){
+        console.log("An uninitialized user attempted to use a command!");
         return;
       }
       post(msg, args);
@@ -180,13 +196,6 @@ client.on('message', async msg => {
         if (await isAScheduler(msg)) {
           var indexToRemove = msg.content.split(" ")[1]
           removeScrimByIndex(msg, indexToRemove)
-        }else{
-          msg.reply("Only Scheduler's can call this command!");
-        }
-        break;
-    case 'clear':
-        if (await isAScheduler(msg)) {
-          wipeTeamsSchedule(msg)
         }else{
           msg.reply("Only Scheduler's can call this command!");
         }
@@ -249,7 +258,26 @@ client.on('message', async msg => {
         if(msg.author.id == CHRIS){
           msg.channel.send("!post July 4 4:40 PM")
         }
-    }
+    case 'echo':
+        if(msg.author.id == CHRIS){
+          msg.delete();
+          var contentToSend = msg.content.replace("!echo ", "")
+          msg.channel.send(contentToSend)
+        }
+        break;
+    case 'clear':
+        if(msg.author.id == CHRIS){
+          msg.delete();
+          var contentToSend = msg.content.replace("!echo ", "")
+          msg.channel.send(contentToSend)
+        }
+        break;
+    case 'checkNow':
+        if(msg.author.id == CHRIS){
+          checkNow();
+        }
+        break;
+      }
   });
 
 
@@ -328,13 +356,11 @@ function showServerSettings(msg){
       str += `\n**Scheduling Channel:** ${msg.guild.channels.cache.get(data.schedulingChannelID)}`
       str += `\n**Team Name:** ${data.team.name}`
       str += `\n**Team Schedulers:** ${data.team.schedulers}`
+      str += `\n**Average Rank:** ${data.team.avgRank}`
       str += `\n**OPGG:** ${data.team.OPGG}`
       str += ""
       msg.channel.send(str);
-  }).catch(err => {
-    console.log("Error getting document", err);
-    somethingWrong = 1;
-  })
+  }).catch(error => console.log(error))
 }
 
 // Registers a team in the firestore
@@ -344,9 +370,10 @@ function registerTeam(msg){
   attemptToSetRoles(msg);
   db.collection('servers').doc(msg.guild.id).update({
     team : {
-      discordChannelID : msg.guild.id, 
       schedulers: [msg.author.tag], 
       name: teamName, 
+      discordChannelID : msg.guild.id,
+      avgRank : "",
       OPGG: OPGG, 
       schedule : [],
     },
@@ -397,7 +424,7 @@ function post(msg, args){
         // This is the value I want to store within Firestore
         var timeValue = requestedTime.valueOf();
         // Push a new scrim into the local array, then update in the database.
-        var formattedListing = Scrim.formatIntoConfirmationString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG)
+        var formattedListing = Scrim.formatIntoConfirmationString(requestedTime, TIMEZONES[data.timeZone], data.team.name, data.team.schedulers, data.team.OPGG, data.team.avgRank)
         getPostingConfirmation(msg, formattedListing, data, timeValue);
       })
 }
@@ -483,7 +510,7 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
   var homeServerChannel = client.guilds.cache.get(homeServerID).channels.cache.get(homeSchedulingChannelID)
   homeServerChannel.send(
     "__**Scrim inquiry regarding the listing for " + timeOfScrim + ". React " + ACCEPT_EMOJI + " to accept or " + DECLINE_EMOJI + " to decline.**__\n" + 
-    Team.teamAsString(awayTeamData.name, awayTeamData.team.schedulers, awayTeamData.team.OPGG)).then(async sentMsg=>{
+    Team.teamAsString(awayTeamData.name, awayTeamData.team.avgRank, awayTeamData.team.schedulers, awayTeamData.team.OPGG)).then(async sentMsg=>{
       var filter = (reaction, user) => {
         return [ACCEPT_EMOJI, DECLINE_EMOJI].includes(reaction.emoji.name) && user.id != BOTID && isAScheduler2(awayServerID, user.id) ;
       };
@@ -694,6 +721,7 @@ async function confirmScrim(homeTeamData, homeserverid, awayTeamData, awayserver
   scrim.awayTeam = awayTeamData.team.name
   scrim.awayTeamOPGG = awayTeamData.team.OPGG
   scrim.awayTeamSchedulers = awayTeamData.team.schedulers
+  scrim.awayTeamAvgRank = awayTeamData.team.avgRank
   scrim.pending = false
   db.collection('servers').doc(awayserverid).get()
   .then(doc=> {
@@ -729,10 +757,12 @@ function addNewScrimToSchedule(msg, data, timeValue, sentMsgID){
       time : timeValue,
       homeTeam : data.team.name,
       homeTeamOPGG : data.team.OPGG,
+      homeTeamAvgRank: data.team.avgRank,
       homeTeamSchedulers : data.team.schedulers,
       awayTeam : "",
       awayTeamOPGG : "",
       awayTeamSchedulers : "",
+      awayTeamAvgRank : "",
       msgID : sentMsgID,
       pending : true,
     })
@@ -854,16 +884,24 @@ function checkForDefaultFields(msg){
       somethingWrong++
     }
     // Discord channel id is defined in a working team.
-    if (data.team.discordChannelID == undefined){
-      str += "\n- Team object. This should never happen."
+    if (!data.team){
+      str += "\n- Entire team is unregistered"
       somethingWrong++
     }
     if (data.schedulerRoleID == -1){
       str += "\n- Scheduler role. "
       somethingWrong++
     }
+    if (data.playerRoleID == -1){
+      str += "\n- Player role. "
+      somethingWrong++
+    }
     if (data.timeZone == ''){
       str += "\n- Time zone."
+      somethingWrong++
+    }
+    if (!data.team.avgRank){
+      str += "\n- Average rank."
       somethingWrong++
     }
     if(somethingWrong != 0)
@@ -884,51 +922,107 @@ client.on('ready', () => {
 });
 
 // Check interval is in minutes
-const CHECK_INTERVAL = .05
+const CHECK_INTERVAL = 15
+
+
+
+// For testing
+async function checkNow(){
+  console.log("Running routine check for upcoming scrims.")
+  var snapshot = await db.collection('servers').get()
+  var docs = snapshot.docs;
+  var currentTime = new Date().valueOf()
+  // Need to track what scrims have been removed since it's a snapshot and won't be as recent as can be.
+  // When a scrim is removed, it's actually in there twice so ignore it the second time around.
+  // Uniquely identify them by msgID, should have started this practice earlier, could go back.
+  var scrimsRemovedThusFar = []
+  docs.map(async doc => {
+    let data = doc.data();
+    var schedule = data.team.schedule;
+    // Skip over unregistered teams
+    if (schedule == undefined){
+      return;
+    }
+    // The Discord server ID is stored in doc.id
+    var schedulingChannel = client.guilds.cache.get(doc.id).channels.cache.get(data.schedulingChannelID)
+    var playerRole = `<@&${data.playerRoleID}>`
+    for (var i=0;i<schedule.length;i++){
+      var scrim = schedule[i]
+      if (scrim.pending == true || scrimsRemovedThusFar.includes(scrim.msgID)){
+        continue;
+      }
+      var timeUntilScrim = scrim.time - currentTime
+      var timeOfScrim = moment.tz(scrim.time, TIMEZONES[data.timeZone])
+      if (timeUntilScrim <= 0){
+        schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
+          "\n*The scrim is happening! Get in the lobby!*")
+        // Remove the scrim from both teams schedules
+        await removeConfirmedScrim(scrim).catch(error=>console.log(error))
+        console.log(`Pushing ${scrim.msgID} to array`)
+        scrimsRemovedThusFar.push(scrim.msgID)
+      }
+      else if (timeUntilScrim< 1800000 && timeUntilScrim > 900000){ // 15-30 min
+        schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
+          "\n*The scrim is happening in the next 30 minutes. Get ready!*")
+      }
+      else if(timeUntilScrim < 360000 && timeUntilScrim > 2700000){ // 45 - 60 min
+        schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
+          "\n*The scrim is happening within an hour.*")
+      }
+    }
+  })
+}
+
+
 
 // Checks for upcoming scrims
 client.on('ready', async function(){
-  setInterval(async function(){
-        console.log("Running routine check for upcoming scrims.")
-        var snapshot = await db.collection('servers').get()
-        var docs = snapshot.docs;
-        var currentTime = new Date().valueOf()
-        // Need to track what scrims have been removed since it's a snapshot and won't be as recent as can be.
-        // When a scrim is removed, it's actually in there twice so ignore it the second time around.
-        // Uniquely identify them by msgID, should have started this practice earlier, could go back.
-        var scrimsRemovedThusFar = []
-        docs.map(async doc => {
-          let data = doc.data();
-          var schedule = data.team.schedule;
-          // The Discord server ID is stored in doc.id
-          var schedulingChannel = client.guilds.cache.get(doc.id).channels.cache.get(data.schedulingChannelID)
-          var playerRole = `<@&${data.playerRoleID}>`
-          for (var i=0;i<schedule.length;i++){
-            var scrim = schedule[i]
-            if (scrim.pending == true || scrimsRemovedThusFar.includes(scrim.msgID)){
-              continue;
-            }
-            var timeUntilScrim = scrim.time - currentTime
-            var timeOfScrim = moment.tz(scrim.time, TIMEZONES[data.timeZone])
-            if (timeUntilScrim <= 0){
-              schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG + 
-                "\n*The scrim is happening! Get in the lobby!*"))
-              // Remove the scrim from both teams schedules
-              await removeConfirmedScrim(scrim).catch(error=>console.log(error))
-              console.log(`Pushing ${scrim.msgID} to array`)
-              scrimsRemovedThusFar.push(scrim.msgID)
-            }
-            else if (timeUntilScrim< 1800000 && timeUntilScrim > 900000){ // 15-30 min
-              schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG + 
-                "\n*The scrim is happening in the next 30 minutes. Get ready!*"))
-            }
-            else if(timeUntilScrim < 360000 && timeUntilScrim > 2700000){ // 45 - 60 min
-              schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG + 
-                "\n*The scrim is happening within an hour.*"))
-            }
-          }
-        })
-          }, CHECK_INTERVAL * 60000)//900000); // <--- Interval of the check, currently 15 minutes.
+  setInterval(async function (){
+    console.log("Running routine check for upcoming scrims.")
+    var snapshot = await db.collection('servers').get()
+    var docs = snapshot.docs;
+    var currentTime = new Date().valueOf()
+    // Need to track what scrims have been removed since it's a snapshot and won't be as recent as can be.
+    // When a scrim is removed, it's actually in there twice so ignore it the second time around.
+    // Uniquely identify them by msgID, should have started this practice earlier, could go back.
+    var scrimsRemovedThusFar = []
+    docs.map(async doc => {
+      let data = doc.data();
+      var schedule = data.team.schedule;
+      // Skip over unregistered teams
+      if (schedule == undefined){
+        return;
+      }
+      // The Discord server ID is stored in doc.id
+      var schedulingChannel = client.guilds.cache.get(doc.id).channels.cache.get(data.schedulingChannelID)
+      var playerRole = `<@&${data.playerRoleID}>`
+      for (var i=0;i<schedule.length;i++){
+        var scrim = schedule[i]
+        if (scrim.pending == true || scrimsRemovedThusFar.includes(scrim.msgID)){
+          continue;
+        }
+        var timeUntilScrim = scrim.time - currentTime
+        var timeOfScrim = moment.tz(scrim.time, TIMEZONES[data.timeZone])
+        if (timeUntilScrim <= 0){
+          schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
+            "\n*The scrim is happening! Get in the lobby!*")
+          // Remove the scrim from both teams schedules
+          await removeConfirmedScrim(scrim).catch(error=>console.log(error))
+          console.log(`Pushing ${scrim.msgID} to array`)
+          scrimsRemovedThusFar.push(scrim.msgID)
+        }
+        else if (timeUntilScrim< 1800000 && timeUntilScrim > 900000){ // 15-30 min
+          schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
+            "\n*The scrim is happening in the next 30 minutes. Get ready!*")
+        }
+        else if(timeUntilScrim < 360000 && timeUntilScrim > 2700000){ // 45 - 60 min
+          schedulingChannel.send(`${playerRole} \n` + Scrim.formatIntoConfirmedString(data.team.name, timeOfScrim, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank)+ 
+            "\n*The scrim is happening within an hour.*")
+        }
+      }
+    })
+  }
+  , CHECK_INTERVAL * 60000)//900000); // <--- Interval of the check, currently 15 minutes.
 });
 
 client.login(process.env.BOT_TOKEN);
