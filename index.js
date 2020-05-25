@@ -125,7 +125,7 @@ client.on('message', async msg => {
   let args = msg.content.substring(PREFIX.length).split(" ");
   switch(args[0]){
     case 'info':
-        msg.channel.send(botDescription())
+        botDescription(msg)
         break;
     case 'roles':
         msg.channel.send(rolesDescription())
@@ -258,11 +258,28 @@ client.on('message', async msg => {
         }
         break;
     case 'ranked?':
-        if(Math.random()*10 + 1 > 9){
-          msg.channel.send("PAKRAT SHOULD PLAY RANKED.")
-        }else{
-          msg.channel.send("PAKRAT SHOULD STOP PLAYING RANKED.")
+      //1 in 10
+        var odds = 10;
+        var str = "**Rolls:** "
+        var arr = []
+        var roll = 0
+        for (var i=0;i<50;i++){
+          roll = parseInt((Math.random() * odds + 1))
+          if(i!=0){
+            str += ", "
+          }
+          str += roll
+          arr.push(roll)
         }
+        var most = mode(arr)
+        str += `\n**Mode**: ${most}`
+        str += `\n**Your odds:** 10%. You have to roll a 10.`
+        if(most == odds){
+          str += `\n**Decision**: ${most} == ${odds}. PAKRAT SHOULD PLAY RANKED.`
+        }else{
+          str += `\n**Decision**: ${most} != ${odds}. PAKRAT SHOULD NOT PLAY RANKED.`
+        }
+        msg.channel.send(str)
         break;
     case 'test':
         if(msg.author.id == CHRIS){
@@ -270,9 +287,9 @@ client.on('message', async msg => {
         }
     case 'echo':
         if(msg.author.id == CHRIS){
-          msg.delete();
           var contentToSend = msg.content.replace("!echo ", "")
           msg.channel.send(contentToSend)
+          msg.delete();
         }
         break;
     case 'clear':
@@ -292,13 +309,22 @@ client.on('message', async msg => {
 
 
 
-
+var mode = function mode(arr) {
+    return arr.reduce(function(current, item) {
+        var val = current.numMapping[item] = (current.numMapping[item] || 0) + 1;
+        if (val > current.greatestFreq) {
+            current.greatestFreq = val;
+            current.mode = item;
+        }
+        return current;
+    }, {mode: null, greatestFreq: -Infinity, numMapping: {}}).mode;
+};
 
 
 // PRIMARY FUNCTIONS FOR WHEN CERTAIN COMMANDS ARE CALLED. USED TO CONDENSE.
 
 // A mapping of the bots commands, called by the !info command
-function botDescription(){
+function botDescription(msg){
   var basicCommands = {
     // Basic commands
     "!info" : "Returns a list of supported commands.",
@@ -321,18 +347,19 @@ function botDescription(){
     //"!setAverageRank" : "Sets the listed average rank of your team. The correct format is !setAverageRank <rank>"
 }
 // My note
-  strToReturn = "*Note from the creator: \nThis bot was created by Chris (chriss#8261). Virtual McSlap 2.0 is named after my team's manager McSlap. This bot is meant to ease the role of a team's manager by automating "+
+  var basicCmds = "*Note from the creator: \nThis bot was created by Chris (chriss#8261). Virtual McSlap 2.0 is named after my team's manager McSlap. This bot is meant to ease the role of a team's manager by automating "+
                 "a lot of the process involved in scheduling scrims. Of course, in any extreneous circumstance / cancelations I would recommend contacting a scheduler directly. I left their "+
                 "information readily available. If you have any ideas on improvements or find any bugs, please contact me.*\n"
-  strToReturn += "__**Basic commands (anyone can use these)**__ \n";
+  basicCmds += "__**Basic commands (anyone can use these)**__ \n";
   Object.entries(basicCommands).forEach(([key, value]) => {
-    strToReturn += "**"+key+"**" + "```" + value + "```";
+    basicCmds += "**"+key+"**" + "```" + value + "```";
    });
-  strToReturn += "\n__**Setting commands (requires the Scheduler role)**__ \n";
+  msg.channel.send(basicCmds)
+  var configCmds = "\n__**Setting commands (requires the Scheduler role)**__ \n";
   Object.entries(configCommands).forEach(([key, value]) => {
-      strToReturn += "**"+key+"**" + "```" + value + "```\n";
+      configCmds += "**"+key+"**" + "```" + value + "```";
   });
-  return strToReturn;
+  msg.channel.send(configCmds)
 }
 
 // A mapping of roles and descriptions, called by the !role command
