@@ -980,7 +980,7 @@ async function checkNow(){
             .then(doc => {
               let data = doc.data()
               let schedule = data.team.schedule.sort(Team.scrimComparator)
-              client.guilds.cache.get(doc.id).channels.get(data.schedulingChannelID).send("One of your pending scrims have timed out.")
+              client.guilds.cache.get(doc.id).channels.get(data.schedulingChannelID).send("```One of your pending scrims have timed out.```")
               schedule.splice(i, 1)
               db.collection('servers').doc(doc.id)
               .update({
@@ -1045,6 +1045,7 @@ client.on('ready', async function(){
             .then(doc => {
               let data = doc.data()
               let schedule = data.team.schedule.sort(Team.scrimComparator)
+              client.guilds.cache.get(doc.id).channels.get(data.schedulingChannelID).send("```One of your pending scrims have timed out.```")
               schedule.splice(i, 1)
               db.collection('servers').doc(homeTeamServerID)
               .update({
