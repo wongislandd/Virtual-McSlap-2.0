@@ -474,6 +474,11 @@ function printSchedule(msg){
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
       if (reaction.emoji.name == INTEREST_EMOJI){
         console.log(`${user.tag} reacted to a listing.`)
+        // Checks if a user is considered high elo before continuing.
+        if (isHighElo(COLLEGIATE_SERVER_ID, user.id)){
+          user.send("Sorry. You are too low elo to react to this post :(")
+          return;
+        }
         var awayServerID = await findAssociatedTeam(user.tag)
         if (awayServerID == "NOT FOUND"){
           user.send("I see you reacted to a scrim listing but I couldn't find you registered under a team in my database! Please make sure you're registered.")
@@ -642,14 +647,22 @@ async function isAScheduler(msg){
 async function isAScheduler2(serverid, userid){
   var member = client.guilds.cache.get(serverid).members.fetch(userid);
   if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
-    console.log("Scheduler found!")
     return 1;
   }else{
-    console.log("Not found to be a Scheduler!")
     return 0;
   }
 }
 
+
+async function isHighElo(serverid, userid){
+  console.log("isHighElo called.")
+  var member = client.guilds.cache.get(serverid).members.fetch(userid);
+  if ((await member).roles.cache.some(role => role.name === 'Collegiate' || role.name === 'Diamond' || role.name == 'Master' || role.name == 'Challenger')) {
+    return 1;
+  }else{
+    return 0;
+  }
+}
 // Removes a scrim by index
 async function cancelScrimByIndex(msg, index){
   db.collection('servers').doc(msg.guild.id).get()
