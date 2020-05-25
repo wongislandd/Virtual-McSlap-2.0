@@ -17,10 +17,10 @@ class Team{
         this.OPGG = OPGG
         this.scrimSchedule = scrimSchedule
     }
-    static printSchedule(msg, team){
+    static printSchedule(data, msg, channelToSendTo){
         // Sort the schedule first
-        var schedule = team.schedule.sort(this.scrimComparator);
-        var channel = msg.guild.channels.cache.get(team.schedulingChannelID)
+        var schedule = data.team.schedule.sort(this.scrimComparator);
+        var channel = msg.guild.channels.cache.get(channelToSendTo)
         var scrim = {}
         for (var i=0;i<schedule.length;i++){
             scrim = schedule[i]
