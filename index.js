@@ -476,7 +476,7 @@ function printSchedule(msg){
         console.log(`${user.tag} reacted to a listing.`)
         // Checks if a user is considered high elo before continuing.
         if (isHighElo(COLLEGIATE_SERVER_ID, user.id)){
-          user.send("Sorry. You are too low elo to react to this post :(")
+          user.send("Sorry. The poster of this listing told me to filter out anybody below Diamond when considering inquiries. :(")
           return;
         }
         var awayServerID = await findAssociatedTeam(user.tag)
