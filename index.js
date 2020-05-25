@@ -50,8 +50,8 @@ const MONTHS = {
 
 
 // COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
-const COLLEGIATE_SERVER_ID = "456586399710314529"
-const COLLEGIATE_SCHEDULING_CHANNELID = "714185153299218522"
+const COLLEGIATE_SERVER_ID = "713578165511127132"
+const COLLEGIATE_SCHEDULING_CHANNELID = "713866406705233952"
 const BOTID = "713577813159968800"
 
 const ACCEPT_EMOJI = "🟢"
@@ -67,11 +67,22 @@ client.on("guildCreate", (guild) => {
   console.log(`Adding ${guild.id} (${guild.name}) to the database.`)
   var guildData = {
     name : guild.name,
-    schedulingChannelID : -1,
     timeZone : "",
-    schedulerRoleID : -1,
-    playerRoleID : -1,
-    team : {}
+    associatedSchedulers : [],
+    teams : []
+  }
+  // Creates the McSlap administrator role upon entry. This will be needed to register team.
+  if(guild.roles.cache.find(role => role.name === `McSlap Administrator`) == null){ // sets the scheduler role to the custom created one by ID
+    guild.roles.create({
+    data:{
+        name: `McSlap Administrator`,
+        color: 'GOLD',
+    }
+    })
+    .then(role => {
+      console.log(`Created new role with name ${role.name} and color ${role.color}`)
+    })
+    .catch(console.error);
   }
   db.collection('servers').doc(guild.id).set(guildData)
 }
@@ -348,8 +359,11 @@ function showServerSettings(msg){
     var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
     var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
     var roleIDs = await createRolesForNewTeam(msg.guild.id, teamName)
-    db.collection('servers').doc(msg.guild.id).update({
-      team : {
+    if (roleIDs == -1){
+      msg.reply("You already have the roles created. Please remove them and try again.")
+      return;
+    }
+    team = {
         schedulers: [msg.author.tag],
         schedulerRoleID : roleIDs[0],
         playerRoleID : roleIDs[1],
@@ -359,44 +373,57 @@ function showServerSettings(msg){
         avgRank : "",
         OPGG: OPGG, 
         schedule : [],
-      }
-    })
-    .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```"))
+    }
+    addTeamToServer(msg.guild.id, team)
+    addAnAssociatedScheduler(msg.guild.id, msg.author.tag)
+    .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```")).catch(error=>console.log(error))
     console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
-}
+  }
 
+  async function addAnAssociatedScheduler(serverid, schedulertag){
+    db.collection('servers').doc(serverid).update({
+      associatedSchedulers : fireStore.FieldValue.arrayUnion([schedulertag])
+    }).catch(error => console.log(error))
+  }
+
+async function addTeamToServer(serverid, team){
+  db.collection('servers').doc(serverid).get()
+  .then(doc=> {
+    let data = doc.data()
+    var teams = data.teams
+    teams.push(team)
+    db.collection('servers').doc(serverid)
+    .update({
+      teams : teams
+    })
+  })
+}
 
 // Roles created first index is Scheduler role id, Second index is Player role id
 async function createRolesForNewTeam(serverid, teamName){
+  console.log("Create roles called.")
   var guild = client.guilds.cache.get(serverid)
   var rolesCreated = []
-  if(guild.roles.cache.find(role => role.name === `${teamName} Scheduler`) == null){ // sets the scheduler role to the custom created one by ID
-    guild.roles.create({
-    data:{
-        name: `${teamName} Scheduler`,
-        color: 'BLUE',
-    }
-    })
-    .then(role => {
-      console.log(`Created new role with name ${role.name} and color ${role.color}`)
-      rolesCreated.push(role.id)
-    })
-    .catch(console.error);
+  return new Promise(async function(resolve, reject) {
+  if(guild.roles.cache.find(role => role.name === `${teamName} Scheduler`) == null && guild.roles.cache.find(role => role.name === `${teamName} Player`) == null){ // sets the scheduler role to the custom created one by ID
+      var schedulerRoleID = await guild.roles.create({
+        data:{
+            name: `${teamName} Scheduler`,
+            color: 'BLUE',
+        }})
+      var playerRoleID = await guild.roles.create({
+        data:{
+          name: `${teamName} Player`,
+          color: 'RED',
+      }})
+      rolesCreated.push(schedulerRoleID.id)
+      rolesCreated.push(playerRoleID.id)
+      resolve(rolesCreated)
   }
-  if(guild.roles.cache.find(role => role.name === `${teamName} Player`) == null){ // sets the scheduler role to the custom created one by ID
-    guild.roles.create({
-    data:{
-        name: `${teamName} Player`,
-        color: 'Red',
-    }
-    })
-    .then(role => {
-    console.log(`Created new role with name ${role.name} and color ${role.color}`),
-    rolesCreated.push(role.id)})
-    .catch(console.error);
+  else{
+    resolve(-1)
   }
-  return rolesCreated;
-}
+})}
 // Takes user input, formats into a scrim, gets confirmation before sending to collegiate channel.
 function post(msg, args){
   var month = args[1];
@@ -444,15 +471,17 @@ function post(msg, args){
 }
 
 
-function printSchedule(msg){
+function printSchedule(msg, teamName){
   db.collection('servers').doc(msg.guild.id).get()
         .then(doc=> {
           let data = doc.data();
-          if (data.team.schedule.length == 0){
+          let teams = data.teams;
+          var specifiedTeam = teams.find(team => team.name == teamName);
+          if (specifiedTeam.schedule.length == 0){
             msg.reply("You currently have no scrims scheduled.")
             return;
           }
-          Team.printSchedule(data, msg, data.schedulingChannelID)
+          Team.printSchedule(msg, specifiedTeam)
         })
 }
 
@@ -479,12 +508,14 @@ function printSchedule(msg){
     if (user.id != BOTID && reaction.message.author.id == BOTID && reaction.message.content.includes("New Scrim Listing")){
       if (reaction.emoji.name == INTEREST_EMOJI){
         console.log(`${user.tag} reacted to a listing.`)
-        var awayServerID = await findAssociatedTeam(user.tag)
+        var awayServerID = await findAssociatedServer(user.tag)
         if (awayServerID == "NOT FOUND"){
           user.send("I see you reacted to a scrim listing but I couldn't find you registered under a team in my database! Please make sure you're registered.")
           return;
         }else{
           console.log(`${user.tag} belongs to ${client.guilds.cache.get(awayServerID).name}`)
+          var awayTeam = await makeUserSpecifyTeam(reaction, user)
+          var awayTeamName = awayTeam.name
           var content = reaction.message.content
           // Find the scrim time, this will be used to uniquely identify the scrim
           var indexOfStart = content.indexOf(",", content.indexOf("**Time**: "))
@@ -495,7 +526,11 @@ function printSchedule(msg){
           // This is a secondary concern.
           indexOfStart = content.indexOf("**Schedulers**: ")
           var firstListedSchedulerTag = content.substring(indexOfStart + 16, content.indexOf("#")+5)
-          var homeServerID = await findAssociatedTeam(firstListedSchedulerTag)
+          // Find the team name of the associated scrim
+          indexOfStart = content.indexOf("**Team**: ")
+          var parsedName = content.substring(indexOfStart + 10, content.indexOf("**Schedulers**"));
+          console.log(`Parsed name: ${parsedName} \nParsed Scheduler Tag: ${firstListedSchedulerTag} \nParsed Time : ${timeOfScrim}`)
+          var homeServerID = await findAssociatedServer(firstListedSchedulerTag)
           if (homeServerID == "NOT FOUND"){
             return;
           }
@@ -505,21 +540,99 @@ function printSchedule(msg){
              return;
           }
           console.log(`${firstListedSchedulerTag} belongs to ${client.guilds.cache.get(homeServerID).name}`)
+
           // Sends an Unknown Member error, not sure why. All behavior is as expected.
-          showInterest(reaction, awayServerID, homeServerID, timeOfScrim).catch(error => error)
+          showInterest(reaction, awayServerID, awayTeamName, homeServerID, parsedName, timeOfScrim).catch(error => error)
         }
       }
     }
-
   });
 
 
+// If a user belongs to multiple teams, prompt them to specify which one they want to continue with.
+async function makeUserSpecifyTeam(reaction, user){
+  return new Promise(function(resolve, reject) {
+    var associatedServer = await findAssociatedServer(user.tag)
+    db.collection('servers').doc(associatedServer).get()
+    .then(doc => {
+      let data = doc.data()
+      var teams = data.teams
+      var associatedTeams = teams.filter(team => team.schedulers.includes(user.tag))
+      // If they only belong to one team
+      if(associatedTeams.length == 1){
+        resolve(associatedTeams[0])
+      }
+      if (associatedTeams.length > 9){
+        user.send("You are associated with too many teams. I cannot handle.")
+      }
+      reaction.message.channel.send(
+        `${user.tag}, I see you are associated will multiple teams. Which would you like this inquiry to be for?` + displayTeamsArrayAsOptions(associatedTeams)
+      ).then(async sentMsg=>{
+        var filter = (reaction, user2) => {
+          return ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"].includes(reaction.emoji.name) && user2.id != BOTID && user2.id == user.id;
+        };
+        var numbers = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+        for (var i=0;i<associatedTeams.length;i++){
+          await sentMsg.react(numbers[i])
+        }
+        sentMsg.awaitReactions(filter, {max: 1, time: 60000, errors: ['time']})
+        .then(collected => {
+          const reaction = collected.first();
+          var decision = -1;
+        switch(reaction.emoji.name){
+          case "1️⃣":
+            decision = 1;
+            break
+          case "2️⃣":
+            decision = 2;
+            break
+          case "3️⃣":
+            decision = 3;
+            break
+          case "4️⃣":
+            decision = 4;
+            break;
+          case "5️⃣":
+            decision = 5;
+            break;
+          case "6️⃣":
+            decision = 6;
+            break;
+          case "7️⃣":
+            decision = 7;
+            break;
+          case "8️⃣":
+            decision = 8;
+            break;
+          case "9️⃣":
+            decision = 9;
+            break;
+          case "🔟":
+            decision = 10;
+            break
+        }
+        resolve(associatedTeams[decision-1])
+        }).catch(error => {
+          console.log(error)
+          resolve(-1)});
+  })
+})})
+}
+
+function displayTeamsArrayAsOptions(arr){
+  var str = ""
+  for (var i=0;i<arr.length;i++){
+    str += `\n${i+1} ${arr[i].name}`
+  }
+  return str;
+}
+
 // When a reactor shows interest in a scrim listing
-async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
-  var awaySchedulingChannelID = await findSchedulingChannel(awayServerID);
-  var homeSchedulingChannelID = await findSchedulingChannel(homeServerID);
-  var awayTeamData = await getTeamData(awayServerID);
-  var homeTeamData = await getTeamData(homeServerID);
+async function showInterest(reactionA, awayServerID, awayTeamName, homeServerID, homeTeamName, timeOfScrim){
+  var awayTeamData = await getTeamData(getServerData(awayServerID), awayTeamName);
+  var homeTeamData = await getTeamData(getServerData(homeServerID), homeTeamName);
+  var awaySchedulingChannelID = awayTeamData.schedulingChannelID;
+  var homeSchedulingChannelID = homeTeamData.schedulingChannelID;
   var awayServerChannel = client.guilds.cache.get(awayServerID).channels.cache.get(awaySchedulingChannelID)
   var homeServerChannel = client.guilds.cache.get(homeServerID).channels.cache.get(homeSchedulingChannelID)
   homeServerChannel.send(
@@ -535,49 +648,49 @@ async function showInterest(reactionA, awayServerID, homeServerID, timeOfScrim){
         const reaction = collected.first();
         if (reaction.emoji.name === ACCEPT_EMOJI) {
           // Accept offer, change pending status, add the away team, add to away team's schedule
-          var indexOfScrim = findScrimIndexByTimeStr(homeTeamData.team.schedule, timeOfScrim);
+          var indexOfScrim = findScrimIndexByTimeStr(homeTeamData.schedule, timeOfScrim);
           console.log(indexOfScrim);
           if (indexOfScrim == -1){
             homeServerChannel.send("Something went wrong. Please contact chriss#8261.")
             awayServerChannel.send("Something went wrong. Please contact chriss#8261.")
             return;
           }
-          var scrim = homeTeamData.team.schedule[indexOfScrim]
+          var scrim = homeTeamData.schedule[indexOfScrim]
           // Confirms the scrim into both team's schedule
           confirmScrim(homeTeamData, homeServerID, awayTeamData, awayServerID, scrim);
           reaction.message.delete();
-          homeServerChannel.send("```" + `Accepted offer from ${awayTeamData.team.name} for ${timeOfScrim}`+"```")
-          awayServerChannel.send("```" + `${homeTeamData.team.name} accepted your offer for ${timeOfScrim}`+"```")
+          homeServerChannel.send("```" + `Accepted offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
+          awayServerChannel.send("```" + `${homeTeamData.name} accepted your offer for ${timeOfScrim}`+"```")
           // Reaction A is the original scrim listing in the collegiate server.
           console.log("Deleting the original message.")
           reactionA.message.delete()
         } else {
           reaction.message.delete();
-          homeServerChannel.send("```" + `Declined offer from ${awayTeamData.team.name} for ${timeOfScrim}`+"```")
+          homeServerChannel.send("```" + `Declined offer from ${awayTeamData.name} for ${timeOfScrim}`+"```")
           // Decline offer, notify away team.
           awayServerChannel.send("```" + `${homeTeamData.name} declined your offer for ${timeOfScrim}`+"```")
         }
-      }).catch(collected => {
-        console.log(collected)
-      });
+      }).catch(error => {console.log(error)});
   })
 }
 
 // Finds a servers scheduling channel, given their serverid (document in the Firestore)
-async function findSchedulingChannel(serverid){
-  console.log(`Looking for scheduling channel associated with ${serverid}`)
+async function findSchedulingChannel(serverid, teamName){
+  console.log(`Looking for scheduling channel associated with ${teamName} in ${serverid}`)
   return new Promise(function(resolve, reject) {
     db.collection('servers').doc(serverid)
   .get()
   .then(doc => {
-      resolve(doc.data().schedulingChannelID)
+      let teams = doc.data().teams
+      var specifiedTeam = teams.find(team => team.name == teamName);
+      resolve(specifiedTeam.schedulingChannelID)
   }).then(() =>
       resolve("NOT FOUND, SHOULD NEVER HAPPEN.")
   )});
 }
 
 // Given the serverid of a team's discord, return their data.
-async function getTeamData(serverid){
+async function getServerData(serverid){
   return new Promise(function(resolve, reject) {
     db.collection('servers').doc(serverid)
   .get()
@@ -588,6 +701,12 @@ async function getTeamData(serverid){
   )});
 }
 
+
+function getTeamData(serverData, teamName){
+  var teams = serverData.teams;
+  var specifiedTeam = teams.find(team => team.name == teamName);
+  return specifiedTeam;
+}
 
 // Finds a scrim by time
 function findScrimIndexByTimeStr(schedule, time){
@@ -616,10 +735,10 @@ function findScrimIndexByTimeNum(schedule, time){
 }
 // Given the tag of a user, search for if they are listed as a scheduler in any channel.
 // Currently if a user is in multiple channels, it will return the first one.
-async function findAssociatedTeam(schedulerTag){
+async function findAssociatedServer(schedulerTag){
     console.log(`Looking for teams associated with ${schedulerTag}`)
     return new Promise(function(resolve, reject) {
-      db.collection('servers').where("team.schedulers", "array-contains", schedulerTag)
+      db.collection('servers').where("teams.associatedSchedulers", "array-contains", schedulerTag)
     .get()
     .then(querySnapshot => {
       querySnapshot.forEach(function(doc){
@@ -630,49 +749,35 @@ async function findAssociatedTeam(schedulerTag){
     )});
 }
 
-// Returns 1 if the author of the message is a scheduler, 0 if not.
-async function isAScheduler(msg){
-  var member = msg.guild.members.fetch(msg.author.id);
-  //console.log(`Checking if ${msg.author.tag} is a scheduler.`)
-  if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
-    //console.log("Scheduler found!")
-    return 1;
-  }else{
-    //console.log("Not found to be a Scheduler!")
-    return 0;
-  }
-}
-
 // Checks if a user is a scheduler given a serverid and userid
-async function isAScheduler2(serverid, userid){
+async function isAScheduler(serverid, userid, teamName){
   var member = client.guilds.cache.get(serverid).members.fetch(userid);
-  if ((await member).roles.cache.some(role => role.name === 'Scheduler')) {
-    console.log("Scheduler found!")
+  if ((await member).roles.cache.some(role => role.name === `${teamName} Scheduler` || role.name === 'McSlap Administrator')) {
     return 1;
   }else{
-    console.log("Not found to be a Scheduler!")
     return 0;
   }
 }
 
 // Removes a scrim by index
-async function cancelScrimByIndex(msg, index){
+async function cancelScrimByIndex(msg, teamName, index){
   db.collection('servers').doc(msg.guild.id).get()
   .then(doc=> {
     let data = doc.data()
-    var team = data.team
-    team.schedule.sort(Team.scrimComparator);
-    if (index >= team.schedule.length){
+    var teams = data.teams;
+    var specifiedTeam = teams.find(team => team.name == teamName);
+    specifiedTeam.schedule.sort(Team.scrimComparator);
+    if (index >= specifiedTeam.schedule.length){
       msg.reply("Out of bounds index given.")
     }
-    if (team.schedule[index].pending == false){
+    if (specifiedTeam.schedule[index].pending == false){
       msg.reply("This scrim is already confirmed. You must contact the opposing team if you wish to cancel.")
       return;
     }
-    var scrim = team.schedule.splice(index, 1)[0]
+    var scrim = specifiedTeam.schedule.splice(index, 1)[0]
     db.collection('servers').doc(msg.guild.id)
     .update({
-      team : team
+      teams : teams
     }).catch(error => console.log(error))
     client.guilds.cache.get(COLLEGIATE_SERVER_ID).channels.cache.get(COLLEGIATE_SCHEDULING_CHANNELID).messages.fetch(scrim.msgID).then(message => message.delete())
     msg.reply("```" + ` Pending scrim cancelled. `+"```")
@@ -682,15 +787,16 @@ async function cancelScrimByIndex(msg, index){
 }
 
 // Clears the entire teams schedule
-async function wipeTeamsSchedule(msg){
+async function wipeTeamsSchedule(msg, teamName){
     db.collection('servers').doc(msg.guild.id).get()
       .then(doc=> {
         let data = doc.data()
-        var team = data.team
-        team.schedule = []
+        var teams = data.teams;
+        var specifiedTeam = teams.find(team => team.name == teamName);
+        specifiedTeam.schedule = []
         db.collection('servers').doc(msg.guild.id)
         .update({
-          team : team
+          teams : teams
         })
         msg.reply("``` Schedule wiped. ```")
     }).catch(error =>console.log(error))
@@ -700,30 +806,34 @@ async function removeConfirmedScrim(scrim){
   // Find the scrim in both team's schedules and remove it.
   var firstListedHomeScheduler = scrim.homeTeamSchedulers[0]
   var firstListedAwayScheduler = scrim.awayTeamSchedulers[0]
-  var homeTeamServerID = await findAssociatedTeam(firstListedHomeScheduler)
-  var awayTeamServerID = await findAssociatedTeam(firstListedAwayScheduler)
+  var homeTeamServerID = await findAssociatedServer(firstListedHomeScheduler)
+  var awayTeamServerID = await findAssociatedServer(firstListedAwayScheduler)
   // Remove and update from home
   db.collection('servers').doc(homeTeamServerID).get()
   .then(doc => {
     let data = doc.data()
-    let schedule = data.team.schedule.sort(Team.scrimComparator)
+    var teams = data.teams;
+    var specifiedTeam = teams.find(team => team.name == scrim.homeTeam);
+    let schedule = specifiedTeam.schedule.sort(Team.scrimComparator)
     var index = findScrimIndexByTimeNum(schedule, scrim.time)
     schedule.splice(index, 1)
     db.collection('servers').doc(homeTeamServerID)
     .update({
-      team : data.team
+      teams : data.teams
     })
   }).catch(error => console.log(error))
   // Remove and update from away
   db.collection('servers').doc(awayTeamServerID).get()
   .then(doc => {
     let data = doc.data()
-    let schedule = data.team.schedule.sort(Team.scrimComparator)
+    var teams = data.teams;
+    var specifiedTeam = teams.find(team => team.name == scrim.awayTeam);
+    let schedule = specifiedTeam.schedule.sort(Team.scrimComparator)
     var index = findScrimIndexByTimeNum(schedule, scrim.time)
     schedule.splice(index, 1)
     db.collection('servers').doc(awayTeamServerID)
     .update({
-      team : data.team
+      teams : data.teams
     })
   }).catch(error => console.log(error))
 }
@@ -731,20 +841,21 @@ async function removeConfirmedScrim(scrim){
 
 // Once a scrim is accepted and confirmed, this function is called to add it to the other team's schedule.
 async function confirmScrim(homeTeamData, homeserverid, awayTeamData, awayserverid, scrim){
-  console.log(`Confirming scrim between ${homeTeamData.team.name} and ${awayTeamData.team.name}`)
-  scrim.awayTeam = awayTeamData.team.name
-  scrim.awayTeamOPGG = awayTeamData.team.OPGG
-  scrim.awayTeamSchedulers = awayTeamData.team.schedulers
-  scrim.awayTeamAvgRank = awayTeamData.team.avgRank
+  console.log(`Confirming scrim between ${homeTeamData.name} and ${awayTeamData.name}`)
+  scrim.awayTeam = awayTeamData.name
+  scrim.awayTeamOPGG = awayTeamData.OPGG
+  scrim.awayTeamSchedulers = awayTeamData.schedulers
+  scrim.awayTeamAvgRank = awayTeamData.avgRank
   scrim.pending = false
   db.collection('servers').doc(awayserverid).get()
   .then(doc=> {
     let data = doc.data()
-    var team = data.team
-    team.schedule.push(scrim)
+    var teams = data.teams
+    var specifiedTeam = teams.find(team => team.name == teamName);
+    specifiedTeam.schedule.push(scrim)
     db.collection('servers').doc(awayserverid)
     .update({
-      team : team
+      teams : teams
     })
   })
   .catch(error =>
@@ -757,7 +868,7 @@ async function confirmScrim(homeTeamData, homeserverid, awayTeamData, awayserver
     team.schedule.push(scrim)
     db.collection('servers').doc(homeserverid)
     .update({
-      team : team
+      teams : teams
     })
   }).catch(error =>
     console.log(error)
@@ -767,7 +878,8 @@ async function confirmScrim(homeTeamData, homeserverid, awayTeamData, awayserver
 // This function is called when a scrim is initially made. It fills in as much information as it can, the rest
 // comes once the scrim is confirmed.
 function addNewScrimToSchedule(msg, data, timeValue, sentMsgID){
-    data.team.schedule.push({
+    var specifiedTeam = data.teams.find(team => team.name == teamName);
+    specifiedTeam.schedule.push({
       time : timeValue,
       homeTeam : data.team.name,
       homeTeamOPGG : data.team.OPGG,
@@ -781,11 +893,10 @@ function addNewScrimToSchedule(msg, data, timeValue, sentMsgID){
       pending : true,
     })
     db.collection('servers').doc(msg.guild.id).update({
-      team : data.team
+      teams : data.teams
     }).catch(error =>
       console.log(error)
     )
-    console.log(`Added a new scrim to ${data.name}'s schedule`)
 }
 
 
@@ -822,49 +933,53 @@ function getPostingConfirmation(msg, formattedListing, data, timeValue){
 }
 
 // Makes the one who called this function a scheduler. They should have the scheduler tag first.
-function addAScheduler(msg){
-  db.collection('servers').doc(msg.guild.id).get()
+function addAScheduler(msg, serverid, teamName, schedulertag){
+  db.collection('servers').doc(serverid).get()
       .then(doc=> {
         let data = doc.data()
-        var team = data.team
-        // Only add if they are already on
-        if (team.schedulers.indexOf(msg.author.tag) === -1){
-          team.schedulers.push(msg.author.tag)
-          db.collection('servers').doc(msg.guild.id)
+        var teams = data.teams
+        var specifiedTeam = teams.find(team => team.name == teamName);
+        if (specifiedTeam == undefined){
+          msg.reply("I couldn't find a team by that name.")
+          return;
+        }
+        if (team.schedulers.indexOf(schedulertag) === -1){
+          specifiedTeam.schedulers.push(schedulertag);
+          db.collection('servers').doc(serverid)
           .update({
-            team : team
+            associatedSchedulers : fireStore.arrayUnion([schedulertag]),
+            teams : teams
           })
-          msg.reply("```" + msg.author.tag + " added as a scheduler for " + team.name + "```")
         }else{
           msg.reply("That scheduler already exists!")
+          return;
         }
-    }).catch(error =>
-      console.log(error)
-   )
+      }
+      ).catch(error => console.log(error))
 }
 
 // Removes a scheduler from the servers listing given their tag. The user calling this role must have the scheduler tag.
-function removeAScheduler(msg){
-  db.collection('servers').doc(msg.guild.id).get()
+function removeAScheduler(msg, serverid, teamName, schedulertag){
+  db.collection('servers').doc(serverid).get()
   .then(doc=> {
     let data = doc.data()
-    var team = data.team
-    var schedulerToRemove = msg.content.replace("!removeAScheduler ", "");
-    console.log(`Scheduler to remove is ${schedulerToRemove}`)
-    // Remove if it exists
-    if (team.schedulers.indexOf(schedulerToRemove) != -1){
-      team.schedulers.splice(team.schedulers.indexOf(schedulerToRemove));
-      db.collection('servers').doc(msg.guild.id)
-      .update({
-        team : team
-      })
-      msg.reply("```" + schedulerToRemove + " removed as a scheduler from " + team.name + "```")
-    }else{
-      msg.reply("I couldn't find that scheduler in your list.")
+    var teams = data.teams
+    var specifiedTeam = teams.find(team => team.name == teamName);
+    if (specifiedTeam == undefined){
+      msg.reply("I couldn't find a team by that name.")
+      return;
     }
-  }).catch(error =>
-    console.log(error)
-  )
+    if (team.schedulers.indexOf(schedulertag) === -1){
+      specifiedTeam.schedulers.splice(team.schedulers.indexOf(schedulertag),1);
+      db.collection('servers').doc(serverid)
+      .update({
+        teams : teams
+      })
+    }else{
+      msg.reply("That scheduler already exists!")
+      return;
+    }
+  }).catch(error => console.log(error))
 }
 
 
@@ -875,29 +990,12 @@ function checkForDefaultFields(msg){
   .then(doc => { 
     var str = "The following fields have been found to be uninitialized. You must intitialize them before continuing:"
     let data = doc.data()
-    if (data.schedulingChannelID == -1){
-      str += "\n- Scheduling channel. "
-      somethingWrong++
-    }
-    // Discord channel id is defined in a working team.
-    if (!data.team){
-      str += "\n- Entire team is unregistered"
-      somethingWrong++
-    }
-    if (data.schedulerRoleID == -1){
-      str += "\n- Scheduler role. "
-      somethingWrong++
-    }
-    if (data.playerRoleID == -1){
-      str += "\n- Player role. "
+    if (data.teams.length == 0){
+      str += "\n- There are no registered teams."
       somethingWrong++
     }
     if (data.timeZone == ''){
       str += "\n- Time zone."
-      somethingWrong++
-    }
-    if (!data.team.avgRank){
-      str += "\n- Average rank. Use !setAverageRank <rank> to define it."
       somethingWrong++
     }
     if(somethingWrong != 0)
