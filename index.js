@@ -844,7 +844,7 @@ function removeAScheduler(msg){
   .then(doc=> {
     let data = doc.data()
     var team = data.team
-    var schedulerToRemove = msg.content.replace("!removeAScheduler ", "");
+    var schedulerToRemove = msg.content.replace("!removeScheduler ", "");
     console.log(`Scheduler to remove is ${schedulerToRemove}`)
     // Remove if it exists
     if (team.schedulers.indexOf(schedulerToRemove) != -1){
@@ -1035,5 +1035,5 @@ client.on('ready', async function(){
   , CHECK_INTERVAL * 60000)//900000); // <--- Interval of the check, currently 15 minutes.
 });
 
-client.login(process.env.BOT_TOKEN);
+client.login(process.env.LIVE_BOT_TOKEN);
 
