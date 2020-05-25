@@ -50,9 +50,16 @@ const MONTHS = {
 
 
 // COLLEGIATE SCHEDULING CHANNEL GUILD AND ID
+
+// For LIVE, these are the actual channels
 const COLLEGIATE_SERVER_ID = "456586399710314529"
 const COLLEGIATE_SCHEDULING_CHANNELID = "714185153299218522"
 const BOTID = "713577813159968800"
+
+// For testing, these are the test server channels
+// const COLLEGIATE_SERVER_ID = "713578165511127132"
+// const COLLEGIATE_SCHEDULING_CHANNELID = "713866406705233952"
+// const BOTID = "714232145823924294"
 
 const ACCEPT_EMOJI = "🟢"
 const DECLINE_EMOJI = "🔴"
@@ -60,11 +67,30 @@ const CONFIRM_EMOJI = "👍"
 const CANCEL_EMOJI = "👎"
 const INTEREST_EMOJI = "🤘🏼";
 
-const CHRIS = 110128099361849344
+const CHRIS = "110128099361849344"
 
 // Process for when the bot joins a new server
 client.on("guildCreate", (guild) => {
   console.log(`Adding ${guild.id} (${guild.name}) to the database.`)
+    if(guild.roles.cache.find(role => role.name === "Scheduler") == null){ // sets the scheduler role to the custom created one by ID
+        guild.roles.create({
+        data:{
+            name: 'Scheduler',
+            color: 'BLUE',
+        }
+        })
+        .then(role => console.log(`Created new role with name ${role.name} and color ${role.color}`))
+        .catch(console.error);
+    }
+    if(guild.roles.cache.find(role => role.name === "Player") == null){
+        guild.roles.create({
+        data:{
+            name: 'Player',
+            color: 'RED'
+        }
+        }).then(role => console.log(`Created new role with name ${role.name} and color ${role.color}`))
+        .catch(console.error);
+    }
   var guildData = {
     name : guild.name,
     schedulingChannelID : -1,
@@ -88,6 +114,9 @@ client.on("guildDelete", (guild) => {
 client.on('message', async msg => {
   if (msg.channel.type == "dm"){ // for pms, maybe reply but make sure it's not responding to itself.
     return(console.log("A message was sent through a DM and has been ignored."));
+  }
+  if (msg.guild.id == COLLEGIATE_SERVER_ID){
+    return;
   }
   // Ignore messages that do not start with the specified prefix.
   if (!msg.content.startsWith(PREFIX)){
@@ -344,59 +373,25 @@ function showServerSettings(msg){
 }
 
 // Registers a team in the firestore
-  async function registerTeam(msg){
-    var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
-    var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
-    var roleIDs = await createRolesForNewTeam(msg.guild.id, teamName)
-    db.collection('servers').doc(msg.guild.id).update({
-      team : {
-        schedulers: [msg.author.tag],
-        schedulerRoleID : roleIDs[0],
-        playerRoleID : roleIDs[1],
-        schedulingChannelID : msg.channel.id,
-        name: teamName, 
-        discordChannelID : msg.guild.id,
-        avgRank : "",
-        OPGG: OPGG, 
-        schedule : [],
-      }
-    })
-    .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```"))
-    console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
+function registerTeam(msg){
+  var teamName = (msg.content.match(/"(.*)"/)[0]).replace("\"","").replace("\"","")
+  var OPGG = msg.content.substring(msg.content.indexOf("https://na.op.gg/"))
+  attemptToSetRoles(msg);
+  db.collection('servers').doc(msg.guild.id).update({
+    team : {
+      schedulers: [msg.author.tag], 
+      name: teamName, 
+      discordChannelID : msg.guild.id,
+      avgRank : "",
+      OPGG: OPGG, 
+      schedule : [],
+    },
+    schedulingChannelID : msg.channel.id,
+  })
+  .then(msg.channel.send("```" + teamName + " successfully attatched to " + msg.guild.name + " within the database. Use !serverSettings to check what I know.```"))
+  console.log(teamName + " successfully attatched to " + msg.guild.name + " within the database.")
 }
 
-
-// Roles created first index is Scheduler role id, Second index is Player role id
-async function createRolesForNewTeam(serverid, teamName){
-  var guild = client.guilds.cache.get(serverid)
-  var rolesCreated = []
-  if(guild.roles.cache.find(role => role.name === `${teamName} Scheduler`) == null){ // sets the scheduler role to the custom created one by ID
-    guild.roles.create({
-    data:{
-        name: `${teamName} Scheduler`,
-        color: 'BLUE',
-    }
-    })
-    .then(role => {
-      console.log(`Created new role with name ${role.name} and color ${role.color}`)
-      rolesCreated.push(role.id)
-    })
-    .catch(console.error);
-  }
-  if(guild.roles.cache.find(role => role.name === `${teamName} Player`) == null){ // sets the scheduler role to the custom created one by ID
-    guild.roles.create({
-    data:{
-        name: `${teamName} Player`,
-        color: 'Red',
-    }
-    })
-    .then(role => {
-    console.log(`Created new role with name ${role.name} and color ${role.color}`),
-    rolesCreated.push(role.id)})
-    .catch(console.error);
-  }
-  return rolesCreated;
-}
 // Takes user input, formats into a scrim, gets confirmation before sending to collegiate channel.
 function post(msg, args){
   var month = args[1];
@@ -500,7 +495,7 @@ function printSchedule(msg){
             return;
           }
           // Don't let users react to their own posts.
-          if (awayServerID == homeServerID){
+          if (awayServerID == homeServerID && user.id != CHRIS){
              user.send("You reacted to your own server's listing. I ignored you sorry uwu")
              return;
           }
@@ -867,7 +862,25 @@ function removeAScheduler(msg){
   )
 }
 
-
+// Attempts to look for "Scheduler" and "Player" roles which should have been created when the bot entered the server.
+function attemptToSetRoles(msg){
+  var schedulerRole = msg.guild.roles.cache.find(role => role.name === "Scheduler")
+  var playerRole = msg.guild.roles.cache.find(role => role.name === "Player")
+  if (schedulerRole == null){
+    msg.reply("I tried to setup the Scheduler role as your primary scheduling role but I couldn't find it. \n Please create a role named Scheduler for me to use.")
+  }else{
+    db.collection('servers').doc(msg.guild.id).update({
+      schedulerRoleID : schedulerRole.id
+    })
+  }
+  if (playerRole == null){
+    msg.reply("I tried to setup the Player role as your primary player role but I couldn't find it. \n Please create a role named Player for me to use.")
+  }else{
+    db.collection('servers').doc(msg.guild.id).update({
+      playerRoleID : playerRole.id
+    })
+  }
+}
 // Checks if anything is uninitialized within the database. Returns -1 if so, and 0 if everything is all good.
 function checkForDefaultFields(msg){
   var somethingWrong = 0;
@@ -893,7 +906,7 @@ function checkForDefaultFields(msg){
       somethingWrong++
     }
     if (data.timeZone == ''){
-      str += "\n- Time zone."
+      str += "\n- Time zone. Use !setTimezone <Eastern/Pacific/Mountain/Central>"
       somethingWrong++
     }
     if (!data.team.avgRank){
