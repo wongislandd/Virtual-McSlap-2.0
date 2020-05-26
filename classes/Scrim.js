@@ -24,12 +24,15 @@ class Scrim{
     // Time must be a moment.
     static formatIntoConfirmedString(teamSendingTo, time, timeZone, homeTeamName, homeTeamSchedulers, homeTeamOPGG, homeTeamAvgRank, awayTeamName, awayTeamSchedulers, awayTeamOPGG, awayTeamAvgRank){
         var readableTime = time.tz(timeZone).format("dddd, MMMM Do YYYY, h:mm:ss a z")
+
         if (homeTeamName == teamSendingTo){
+            console.log(`${homeTeamName} = ${teamSendingTo}`)
             var opposingTeam = awayTeamName
             var opposingTeamOPGG = awayTeamOPGG
             var opposingTeamSchedulers = awayTeamSchedulers
             var opposingTeamAvgRank = awayTeamAvgRank
         }else{
+            console.log(`${homeTeamName} != ${teamSendingTo}`)
             var opposingTeam = homeTeamName
             var opposingTeamOPGG = homeTeamOPGG
             var opposingTeamSchedulers = homeTeamSchedulers

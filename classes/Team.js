@@ -17,10 +17,11 @@ class Team{
         this.OPGG = OPGG
         this.scrimSchedule = scrimSchedule
     }
-    static printSchedule(data, msg, channelToSendTo){
+    
+    static printSchedule(data, msg){
         // Sort the schedule first
         var schedule = data.team.schedule.sort(this.scrimComparator);
-        var channel = msg.guild.channels.cache.get(channelToSendTo)
+        var channel = msg.channel
         var scrim = {}
         for (var i=0;i<schedule.length;i++){
             scrim = schedule[i]
@@ -29,10 +30,33 @@ class Team{
                 // Don't print pending ones.
                 channel.send("```" + `[${i}] PENDING`+ "```"+Scrim.formatIntoPendingString(time, TIMEZONES[data.timeZone]))
             }else{
-                channel.send("```" + `[${i}] CONFIRMED`+ "```" + Scrim.formatIntoConfirmedString(data.name, time, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG))
+                channel.send("```" + `[${i}] CONFIRMED`+ "```" + Scrim.formatIntoConfirmedString(data.team.name, time, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamAvgRank, scrim.homeTeamOPGG, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank))
+            // static formatIntoConfirmedString(teamSendingTo, time, timeZone, homeTeamName, homeTeamSchedulers, homeTeamOPGG, homeTeamAvgRank, awayTeamName, awayTeamSchedulers, awayTeamOPGG, awayTeamAvgRank){
             }
         }
     }
+
+    // Used to print schedule for dev. The difference is that it sends
+    static printScheduleToMe(data, msg){
+        // Sort the schedule first
+        var schedule = data.team.schedule.sort(this.scrimComparator);
+        var channel = msg.channel
+        var scrim = {}
+        for (var i=0;i<schedule.length;i++){
+            scrim = schedule[i]
+            var time = moment.tz(scrim.time, TIMEZONES[data.timeZone])
+            if (scrim.pending == true){
+                // Don't print pending ones.
+                channel.send("```" + `[${i}] PENDING`+ "```"+Scrim.formatIntoPendingString(time, TIMEZONES[data.timeZone]))
+            }else{
+                channel.send("```" + `[${i}] CONFIRMED`+ "```" + Scrim.formatIntoConfirmedString(data.team.name, time, TIMEZONES[data.timeZone], scrim.homeTeam, scrim.homeTeamSchedulers, scrim.homeTeamOPGG, scrim.homeTeamAvgRank, scrim.awayTeam, scrim.awayTeamSchedulers, scrim.awayTeamOPGG, scrim.awayTeamAvgRank))
+            // static formatIntoConfirmedString(teamSendingTo, time, timeZone, homeTeamName, homeTeamSchedulers, homeTeamOPGG, homeTeamAvgRank, awayTeamName, awayTeamSchedulers, awayTeamOPGG, awayTeamAvgRank){
+            }
+        }
+    }
+
+
+
     static changeOPGG(serverid, OPGG, db){
         console.log("ChangeOPGG Called.");
         db.collection('servers').doc(serverid).update({
