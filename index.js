@@ -332,8 +332,10 @@ client.on("message", async (msg) => {
       break;
     case "test":
       if (msg.author.id == CHRIS) {
-        msg.channel.send("!post July 4 4:40 PM");
+        msg.channel.send("React to me!");
+        msg.react(":one:")
       }
+      break;
     case "echo":
       if (msg.author.id == CHRIS) {
         var contentToSend = msg.content.replace("!echo ", "");
@@ -367,6 +369,20 @@ client.on("message", async (msg) => {
         }
         deleteListingByID(args[1])
         msg.reply("```Deleted " + args[1] + "```")
+      }
+      break;
+    case "addCollegiate":
+      if (msg.author.id == CHRIS) {
+        let role = client.guilds.cache.get(COLLEGIATE_SERVER_ID).roles.cache.find(r => r.name === "Collegiate");
+        let member = client.guilds.cache.get(COLLEGIATE_SERVER_ID).members.cache.find(m => m.id === CHRIS)
+        member.roles.add(role, "Testing").catch(error => console.log(error))
+      }
+      break;
+    case "removeCollegiate":
+      if (msg.author.id == CHRIS) {
+        let role = client.guilds.cache.get(COLLEGIATE_SERVER_ID).roles.cache.find(r => r.name === "Collegiate");
+        let member = client.guilds.cache.get(COLLEGIATE_SERVER_ID).members.cache.find(m => m.id === CHRIS)
+        member.roles.remove(role, "Testing").catch(error => console.log(error))
       }
       break;
   }
@@ -420,6 +436,8 @@ function botDescription(msg) {
       "Adds the sender of the message as a scheduler for the team. Requires Scheduler role.",
     "!removeScheduler":
       "Removes a scheduler from the team. Requires scheduler role. The correct format is !removeScheduler <tag>",
+    "!setSchedulingChannel":
+      "Sets the channel the message was sent in to the new scheduling channel."
     //"!setAverageRank" : "Sets the listed average rank of your team. The correct format is !setAverageRank <rank>"
   };
   // My note
@@ -655,12 +673,14 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name == INTEREST_EMOJI) {
       console.log(`${user.tag} reacted to a listing.`);
       // Checks if a user is considered high elo before continuing.
-      // if (isHighElo(COLLEGIATE_SERVER_ID, user.id)) {
-      //   user.send(
-      //     "Sorry. The poster of this listing told me to filter out anybody below Diamond when considering inquiries. :("
-      //   );
-      //   return;
-      // }
+      var highEloPass = await isHighElo(COLLEGIATE_SERVER_ID, user.id)
+      if (!highEloPass) {
+         console.log("A reactor was rejected.")
+         user.send(
+           "Sorry. The poster of this listing told me to filter out anybody below Diamond when considering inquiries. :("
+         );
+         return;
+       }
       var awayServerID = await findAssociatedTeam(user.tag);
       if (awayServerID == "NOT FOUND") {
         user.send(
@@ -910,20 +930,24 @@ async function isAScheduler2(serverid, userid) {
 
 async function isHighElo(serverid, userid) {
   console.log("isHighElo called.");
-  var member = client.guilds.cache.get(serverid).members.fetch(userid);
-  if (
-    (await member).roles.cache.some(
-      (role) =>
-        role.name === "Collegiate" ||
-        role.name === "Diamond" ||
-        role.name == "Master" ||
-        role.name == "Challenger"
-    )
-  ) {
-    return 1;
-  } else {
-    return 0;
-  }
+  return new Promise(async function (resolve, reject) {
+    var member = client.guilds.cache.get(serverid).members.fetch(userid);
+    if (
+      (await member).roles.cache.some(
+        (role) =>
+          role.name === "Collegiate" ||
+          role.name === "Diamond" ||
+          role.name === "Master" ||
+          role.name === "Challenger"
+      )
+    ) {
+      console.log("High elo found.")
+      resolve(1);
+    } else {
+      console.log("Low elo found.")
+      resolve (0);
+    }
+  });
 }
 
 
