@@ -1,7 +1,7 @@
 // Firebase App (the core Firebase SDK) is always required and
 // must be listed before other Firebase SDKs
 const admin = require("firebase-admin");
-const serviceAccount = require("./ServiceAccountKey.json");
+const serviceAccount = require("./FirebaseAccount.json");
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });

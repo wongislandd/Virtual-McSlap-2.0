@@ -1,7 +1,5 @@
 virtualmcslap-firebase-adminsdk-uv93d-7ee0978d85.json
 node_modules/
 .env
-ServiceAccountKey.json
-ServiceAccountKey.json
 BetaServiceAccountKey.json
-ServiceAccountKey.json
+*.json
