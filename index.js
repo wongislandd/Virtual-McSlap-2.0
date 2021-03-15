@@ -1,7 +1,7 @@
 // Firebase App (the core Firebase SDK) is always required and
 // must be listed before other Firebase SDKs
 const admin = require("firebase-admin");
-const serviceAccount = require("./FirebaseAccount.json");
+const serviceAccount = require("./ServiceAccountKey.json");
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -58,6 +58,9 @@ const BOTID = "713577813159968800";
 // const COLLEGIATE_SERVER_ID = "713578165511127132"
 // const COLLEGIATE_SCHEDULING_CHANNELID = "713866406705233952"
 // const BOTID = "714232145823924294"
+
+const TESTING_SERVER_ID = "713578165511127132"
+
 
 const ACCEPT_EMOJI = "🟢";
 const DECLINE_EMOJI = "🔴";
@@ -131,6 +134,7 @@ client.on("message", async (msg) => {
   if (!msg.content.startsWith(PREFIX)) {
     return;
   }
+
   let args = msg.content.substring(PREFIX.length).split(" ");
   switch (args[0]) {
     case "info":
@@ -166,11 +170,12 @@ client.on("message", async (msg) => {
       await db.collection("servers")
       .doc(msg.guild.id)
       .get().then(doc => {
-        if(doc.data().team.schedule.length != 0){
+        if(doc.data().team.schedule == undefined) {
+          registerTeam(msg)
+        }
+        else if(doc.data().team.schedule.length != 0){
           msg.reply("```You cannot register a team when there are scrims in your schedule! Please cancel them before registering. ```")
           return;
-        }else{
-          registerTeam(msg)
         }
       })
       break;
@@ -444,7 +449,7 @@ function botDescription(msg) {
   var basicCmds =
     "*Note from the creator: \nThis bot was created by Chris (chriss#8261). Virtual McSlap 2.0 is named after my team's manager McSlap. This bot is meant to ease the role of a team's manager by automating " +
     "a lot of the process involved in scheduling scrims. Of course, in any extreneous circumstance / cancelations I would recommend contacting a scheduler directly. I left their " +
-    "information readily available. If you have any ideas on improvements or find any bugs, please contact me.*\n";
+    "information readily available. If you have any ideas on improvements or find any bugs, please contact me.\n``Keep in mind that Virtual McSlap has unspecified behavior if you are a registered scheduler for more than 1 team.``*\n";
   basicCmds += "__**Basic commands (anyone can use these)**__ \n";
   Object.entries(basicCommands).forEach(([key, value]) => {
     basicCmds += "**" + key + "**" + "```" + value + "```";
@@ -628,7 +633,7 @@ function printSchedule(msg) {
     .get()
     .then((doc) => {
       let data = doc.data();
-      if (data.team.schedule.length == 0) {
+      if (data.team.schedule == undefined || data.team.schedule.length == 0 ) {
         msg.reply("You currently have no scrims scheduled.");
         return;
       }
@@ -709,7 +714,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
           return;
         }
         // Don't let users react to their own posts.
-        if (awayServerID == homeServerID && user.id != CHRIS) {
+        if (awayServerID == homeServerID) {
           user.send(
             "You reacted to your own server's listing. I ignored you sorry uwu"
           );
@@ -932,6 +937,9 @@ async function isHighElo(serverid, userid) {
   console.log("isHighElo called.");
   return new Promise(async function (resolve, reject) {
     var member = client.guilds.cache.get(serverid).members.fetch(userid);
+    if (serverid == TESTING_SERVER_ID) {
+      return resolve(1)
+    }
     if (
       (await member).roles.cache.some(
         (role) =>
@@ -1280,7 +1288,7 @@ function checkForDefaultFields(msg) {
         str += "\n- Average rank. Use !setAverageRank <rank> to define it.";
         somethingWrong++;
       }
-      if (somethingWrong != 0) msg.reply(str);
+      if (somethingWrong != 0) msg.reply(str += "\n``Using !registerTeam should initialize the player/scheduler roles as well as the scheduling channel for you.``");
     })
     .catch((err) => {
       console.log("Error getting document", err);
@@ -1541,4 +1549,5 @@ client.on("ready", async function () {
   }, CHECK_INTERVAL * 60000); //900000); // <--- Interval of the check, currently 15 minutes.
 });
 
+// client.login(process.env.BETA_BOT_TOKEN);
 client.login(process.env.LIVE_BOT_TOKEN);
